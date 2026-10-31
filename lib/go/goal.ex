@@ -14,6 +14,8 @@ defmodule Go.Goal do
   A move is good only if it is true in real Go, not only in the move
   limit. In an escape puzzle, a blue move is good only if Red cannot
   capture the fort in the moves that are left plus `deep/0` more moves.
+  In these deep checks, a fort with 5 liberties or more has escaped
+  (see `deep_opts/0`).
   Thus the game never says "Your fort is safe!" when Red can still catch
   the fort some moves later. `Go.Puzzles.Check` uses the same depth for
   the tempting wrong moves of a capture puzzle.
@@ -33,8 +35,18 @@ defmodule Go.Goal do
   # move limit plus this many attacker moves.
   @deep 6
 
+  # In the deep checks, a target with this many liberties has escaped.
+  # Without this cut, the deep checks of open positions are too slow.
+  @settled 5
+
   @doc "The extra moves of the deep checks (see the module doc)."
   def deep, do: @deep
+
+  @doc """
+  The options of the solver for the deep checks: a target with
+  #{@settled} liberties or more has escaped (it is settled).
+  """
+  def deep_opts, do: [settled: @settled]
 
   @doc "The goal types that the server can check now."
   def types, do: @types
@@ -79,7 +91,7 @@ defmodule Go.Goal do
     not Solver.captured?(board, goal.target, :blue) and
       (left == 0 or
          not Solver.attacker_wins?(board, goal.target, :red, :red, left, passes_only: true)) and
-      not Solver.attacker_wins?(board, goal.target, :red, to_move, left + @deep)
+      not Solver.attacker_wins?(board, goal.target, :red, to_move, left + @deep, deep_opts())
   end
 
   @doc """
@@ -106,7 +118,7 @@ defmodule Go.Goal do
     do: left > 0 and Solver.attacker_wins?(board, goal.target, :blue, :blue, left)
 
   def reachable?(%{type: :escape} = goal, board, left),
-    do: not Solver.attacker_wins?(board, goal.target, :red, :blue, left + @deep)
+    do: not Solver.attacker_wins?(board, goal.target, :red, :blue, left + @deep, deep_opts())
 
   @doc """
   Tells if a blue move keeps the goal reachable. The move must be legal.
@@ -129,16 +141,33 @@ defmodule Go.Goal do
   defp good_after?(%{type: :escape} = goal, next, left) do
     not Solver.captured?(next, goal.target, :blue) and
       not Solver.attacker_wins?(next, goal.target, :red, :red, left) and
-      not Solver.attacker_wins?(next, goal.target, :red, :red, left + @deep)
+      not Solver.attacker_wins?(next, goal.target, :red, :red, left + @deep, deep_opts())
   end
 
-  @doc "Gives all good blue moves on the whole board."
-  @spec good_moves(t(), Board.t(), non_neg_integer()) :: [Board.point()]
-  def good_moves(goal, board, left) do
-    board
-    |> Board.legal_moves(:blue)
-    |> Enum.filter(&good_move?(goal, board, left, &1))
+  @doc """
+  Gives the good blue moves on the whole board, row by row.
+
+  With `max: k`, it stops when it has found k good moves. Then it tries the
+  moves near the target first. A check for one correct move uses `max: 2`.
+  """
+  @spec good_moves(t(), Board.t(), non_neg_integer(), keyword()) :: [Board.point()]
+  def good_moves(goal, board, left, opts \\ []) do
+    moves = Board.legal_moves(board, :blue)
+
+    case Keyword.get(opts, :max) do
+      nil ->
+        Enum.filter(moves, &good_move?(goal, board, left, &1))
+
+      max ->
+        moves
+        |> Enum.sort_by(&distance(&1, goal.target))
+        |> Stream.filter(&good_move?(goal, board, left, &1))
+        |> Enum.take(max)
+        |> Enum.sort()
+    end
   end
+
+  defp distance({r, c}, {tr, tc}), do: abs(r - tr) + abs(c - tc)
 
   @doc """
   Tells if the fight is settled for the target after a wrong blue move:
@@ -147,7 +176,14 @@ defmodule Go.Goal do
   """
   @spec settled?(t(), Board.t(), non_neg_integer(), Board.color()) :: boolean()
   def settled?(goal, board, left, to_move) do
-    not Solver.attacker_wins?(board, goal.target, attacker(goal), to_move, left + @deep)
+    not Solver.attacker_wins?(
+      board,
+      goal.target,
+      attacker(goal),
+      to_move,
+      left + @deep,
+      deep_opts()
+    )
   end
 
   @doc """
@@ -187,7 +223,7 @@ defmodule Go.Goal do
         need =
           if Solver.captured?(next, goal.target, :blue),
             do: 0,
-            else: Solver.moves_to_capture(next, goal.target, :red, :blue, horizon)
+            else: Solver.moves_to_capture(next, goal.target, :red, :blue, horizon, deep_opts())
 
         libs = Board.liberty_count(next, goal.target)
         safe = length(Board.group(next, move).liberties)
@@ -250,7 +286,7 @@ defmodule Go.Goal do
       for move <- Solver.candidates(board, goal.target),
           {:ok, next, _} <- [Board.play(board, :blue, move)],
           not Solver.captured?(next, goal.target, :blue) do
-        need = Solver.moves_to_capture(next, goal.target, :red, :red, left) || 100
+        need = Solver.moves_to_capture(next, goal.target, :red, :red, left, deep_opts()) || 100
         {move, {need, Board.liberty_count(next, goal.target)}}
       end
 

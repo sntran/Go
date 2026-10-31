@@ -176,7 +176,8 @@ defmodule Go.Puzzles.Starter do
         ],
         answer: {0, 3},
         title: "Chase into the corner",
-        say: "Catch the red wall in 2 moves. Chase it toward the corner, where it has no roads. Watch out for its friends below.",
+        say:
+          "Catch the red wall in 2 moves. Chase it toward the corner, where it has no roads. Watch out for its friends below.",
         hint: "Close the road that leads away from the corner.",
         better:
           "Build at the right end of the red wall. Then Red can only run into the corner, and there it has only 1 road.",
@@ -384,9 +385,11 @@ defmodule Go.Puzzles.Starter do
         ],
         answer: {3, 1},
         title: "Run down to a friend",
-        say: "Red closed three roads of your tower. Run out on the last one! A friend waits below.",
+        say:
+          "Red closed three roads of your tower. Run out on the last one! A friend waits below.",
         hint: "Which road is still open?",
-        better: "Build below your tower. There it joins its friend, and your fort gets many roads."
+        better:
+          "Build below your tower. There it joins its friend, and your fort gets many roads."
       },
       %{
         id: "escape-03",
@@ -578,13 +581,15 @@ defmodule Go.Puzzles.Starter do
         ],
         answer: {3, 1},
         title: "Away from the edge",
-        say: "Red attacks your tower. It has 2 open roads: one leads to the edge, and one leads to open space. Run the right way!",
+        say:
+          "Red attacks your tower. It has 2 open roads: one leads to the edge, and one leads to open space. Run the right way!",
         hint: "The edge has no roads. Where does your fort get more roads?",
         better: "Run left, away from the edge. There your fort gets 4 roads.",
         wrong: %{
           {4, 2} => %{
             what: nil,
-            why: "Your tower ran to the edge. The edge gives few roads, so Red could close them one at a time."
+            why:
+              "Your tower ran to the edge. The edge gives few roads, so Red could close them one at a time."
           }
         }
       },
@@ -602,17 +607,21 @@ defmodule Go.Puzzles.Starter do
         ],
         answer: {1, 3},
         title: "Run to the middle",
-        say: "Your tower stands on the edge, and Red comes near. Run where your fort gets the most roads.",
+        say:
+          "Your tower stands on the edge, and Red comes near. Run where your fort gets the most roads.",
         hint: "Count the roads for each spot. The edge and the corner give few roads.",
-        better: "Build to the left of your tower, toward the middle. There your fort gets the most roads.",
+        better:
+          "Build to the left of your tower, toward the middle. There your fort gets the most roads.",
         wrong: %{
           {0, 4} => %{
             what: nil,
-            why: "Your tower went into the corner. The corner gives no new roads, and Red closed the way to the middle."
+            why:
+              "Your tower went into the corner. The corner gives no new roads, and Red closed the way to the middle."
           },
           {2, 4} => %{
             what: nil,
-            why: "Your tower went down along the edge, toward the red towers. Red closed the way to the middle."
+            why:
+              "Your tower went down along the edge, toward the red towers. Red closed the way to the middle."
           }
         }
       }

@@ -2,10 +2,6 @@ defmodule Go.ReferenceSolverTest do
   @moduledoc """
   Compares the fast solver with the slow reference solver
   (`Go.ReferenceSolver`), which tries all legal moves.
-
-  The comparison of the bank puzzles on boards bigger than 5x5 is slow
-  (some minutes). It has the tag `:reference`, and `mix test` does not run
-  it. Run it with `mix test --include reference`.
   """
 
   use ExUnit.Case, async: true
@@ -74,14 +70,17 @@ defmodule Go.ReferenceSolverTest do
   end
 
   defp good?(%{type: :capture} = goal, next, wins?),
-    do: Board.get(next, goal.target) != :red or (goal.moves > 1 and wins?.(next, goal.target, :blue, :red, goal.moves - 1))
+    do:
+      Board.get(next, goal.target) != :red or
+        (goal.moves > 1 and wins?.(next, goal.target, :blue, :red, goal.moves - 1))
 
   defp good?(%{type: :escape} = goal, next, wins?),
-    do: Board.get(next, goal.target) == :blue and not wins?.(next, goal.target, :red, :red, goal.moves)
+    do:
+      Board.get(next, goal.target) == :blue and
+        not wins?.(next, goal.target, :red, :red, goal.moves)
 
   for p <- Puzzles.all() do
     @p p
-    if p.size > 5, do: @tag(:reference)
     @tag timeout: :infinity
     test "#{p.id}: the good first moves are the same as with the reference" do
       assert fast_good(@p) == ReferenceSolver.good_moves(@p.goal, Puzzle.board(@p), @p.goal.moves)

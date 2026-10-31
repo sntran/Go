@@ -74,14 +74,6 @@ The tests include:
   and the stars, "Show the answer", "Next puzzle", and taps on occupied
   points, on illegal points and during the turn of Red.
 
-The comparison with the reference solver on the bank puzzles that are
-bigger than 5x5 is slow (some minutes). `mix test` does not run it. Run it
-with:
-
-```sh
-mix test --include reference
-```
-
 ## Make the puzzle bank
 
 ```sh
@@ -90,7 +82,7 @@ mix go.gen.puzzles
 
 The task checks the hand-made starter set, makes puzzles from templates,
 checks each puzzle with the solver, and writes `priv/puzzles/bank.json`.
-It takes about 45 seconds. The same seed (`--seed`, 1 by default) gives
+It takes about 5 minutes on 4 cores. The same seed (`--seed`, 1 by default) gives
 the same file. Commit the file after you make it again.
 
 Each puzzle in the bank passes these checks:
@@ -108,6 +100,10 @@ Each puzzle in the bank passes these checks:
   fort is safe.
 - It is not a copy of another puzzle, also after rotation or mirroring.
 
+In these deep checks, a group with 5 roads or more has escaped: the
+search stops there. Without this cut, the deep checks of open positions
+are too slow.
+
 The checks are true in real Go, not only in the move limit. On a small
 board, a group with few roads often dies some moves later. Thus the
 templates for the edge chase and the ladder also have red helper stones
@@ -124,18 +120,18 @@ becomes an escape.
 
 | Template           | Variations | Different | Good | Kept |
 |--------------------|-----------:|----------:|-----:|-----:|
-| capture_in_1       |       1644 |       157 |   58 |    6 |
-| edge_chase         |        484 |       198 |   54 |   10 |
-| edge_chase_swapped |        484 |       210 |    3 |    3 |
-| ladder             |       1468 |       651 |   84 |    8 |
-| ladder_swapped     |       1468 |       656 |   82 |    8 |
-| net                |      10224 |      4316 |  770 |   10 |
-| escape_extend      |       1162 |       373 |  301 |    8 |
-| escape_capture     |        595 |       508 |   44 |    8 |
-| escape_connect     |        603 |       531 |   16 |    8 |
+| capture_in_1       |       1644 |       159 |   58 |    6 |
+| edge_chase         |        160 |        37 |    7 |    7 |
+| edge_chase_swapped |        160 |        47 |    4 |    4 |
+| ladder             |        634 |       234 |   16 |    8 |
+| ladder_swapped     |        634 |       234 |   37 |    8 |
+| net                |       1005 |       503 |   88 |   10 |
+| escape_extend      |       1162 |       418 |  276 |    8 |
+| escape_capture     |        595 |       508 |   50 |    8 |
+| escape_connect     |        603 |       531 |   18 |    8 |
 
-With the 23 hand-made puzzles (12 capture, 11 escape), the bank has 92
-puzzles: 46 in each world.
+With the 23 hand-made puzzles (12 capture, 11 escape), the bank has 90
+puzzles: 43 in the capture world and 47 in the escape world.
 
 ## How it works
 

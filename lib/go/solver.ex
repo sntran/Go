@@ -40,7 +40,9 @@ defmodule Go.Solver do
 
   `to_move` is the color that plays next. With `passes_only: true`, the
   defender only passes: this tells if the target is in danger when the
-  defender does nothing.
+  defender does nothing. With `settled: k`, a target with k liberties or
+  more has escaped: the search stops there. This is not exact, so only the
+  deep checks use it (see `Go.Goal.deep/0`).
   """
   @spec attacker_wins?(
           Board.t(),
@@ -142,7 +144,8 @@ defmodule Go.Solver do
       target: target,
       attacker: attacker,
       defender: Board.other(attacker),
-      passes_only: Keyword.get(opts, :passes_only, false)
+      passes_only: Keyword.get(opts, :passes_only, false),
+      settled: Keyword.get(opts, :settled)
     }
   end
 
@@ -166,6 +169,7 @@ defmodule Go.Solver do
 
         cond do
           n == 0 or libs > n -> {false, cache}
+          fight.settled != nil and libs >= fight.settled -> {false, cache}
           to_move == fight.attacker -> attack(board, fight, group, n, cache)
           true -> defend(board, fight, group, n, cache)
         end
@@ -205,11 +209,15 @@ defmodule Go.Solver do
     moves =
       if fight.passes_only,
         do: [],
-        else: board |> candidates(group, group.liberties) |> ordered(board, fight.defender, fight.target, :desc)
+        else:
+          board
+          |> candidates(group, group.liberties)
+          |> ordered(board, fight.defender, fight.target, :desc)
 
     {:ok, passed, _} = Board.play(board, fight.defender, :pass)
 
-    Enum.reduce_while(moves ++ [{:pass, passed}], {true, cache}, fn {_move, next}, {true, cache} ->
+    Enum.reduce_while(moves ++ [{:pass, passed}], {true, cache}, fn {_move, next},
+                                                                    {true, cache} ->
       case search(next, fight, fight.attacker, n, cache) do
         {false, cache} -> {:halt, {false, cache}}
         {true, cache} -> {:cont, {true, cache}}

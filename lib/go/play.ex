@@ -166,7 +166,10 @@ defmodule Go.Play do
     later = caught_later?(goal, Explain.replay(play.board, line), play.left)
 
     feedback =
-      Explain.wrong(play.puzzle, before, point, line, left_before, better, start?, caught_later: later)
+      Explain.wrong(play.puzzle, before, point, line, left_before, better, start?,
+        caught_later: later
+      )
+
     steps = Enum.map(line, fn {color, move, _} -> {color, move} end)
 
     %{
@@ -198,7 +201,9 @@ defmodule Go.Play do
   # In a capture puzzle: Blue can still catch Red later, but not in the
   # moves that are left.
   defp caught_later?(%{type: :capture} = goal, board, left),
-    do: not Go.Solver.captured?(board, goal.target, :red) and not Goal.settled?(goal, board, left, :blue)
+    do:
+      not Go.Solver.captured?(board, goal.target, :red) and
+        not Goal.settled?(goal, board, left, :blue)
 
   defp caught_later?(_goal, _board, _left), do: false
 
@@ -215,7 +220,14 @@ defmodule Go.Play do
 
           :escape ->
             Go.Solver.captured?(next, goal.target, :blue) or
-              Go.Solver.attacker_wins?(next, goal.target, :red, :blue, left - 1 + Goal.deep())
+              Go.Solver.attacker_wins?(
+                next,
+                goal.target,
+                :red,
+                :blue,
+                left - 1 + Goal.deep(),
+                Goal.deep_opts()
+              )
         end
 
       {:error, _} ->

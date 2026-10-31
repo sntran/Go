@@ -109,7 +109,7 @@ defmodule Go.Puzzles.Templates do
     %{
       name: "edge_chase",
       type: :capture,
-      helpers: true,
+      helpers: false,
       swap: true,
       limit: 10,
       min: 2,
@@ -133,7 +133,7 @@ defmodule Go.Puzzles.Templates do
     %{
       name: "ladder",
       type: :capture,
-      helpers: true,
+      helpers: false,
       swap: true,
       limit: 8,
       min: 3,
@@ -153,7 +153,9 @@ defmodule Go.Puzzles.Templates do
             max: 4
           }
         end
-        |> Enum.flat_map(fn base -> [base | Enum.map(far_helpers(base), &with_helper(base, &1))] end)
+        |> Enum.flat_map(fn base ->
+          [base | Enum.map(far_helpers(base), &with_helper(base, &1))]
+        end)
       end
     }
   end
@@ -198,7 +200,8 @@ defmodule Go.Puzzles.Templates do
       better: "Build corner to corner from Red. That closes both ways out, like a net.",
       trap_why: "Your move touched Red, but Red could run away to its friend on the other side.",
       bases: fn ->
-        for size <- [7, 9], r <- 2..(size - 4), c <- 2..(size - 4), fr <- [2, 3], fc <- [2, 3] do
+        # Shifts and helper stones make the other places on the board.
+        for size <- [7, 9], r = div(size, 2) - 1, c = r, fr <- [2, 3], fc <- [2, 3] do
           %{
             size: size,
             blue: [{r - 1, c}, {r - 1, c + 1}, {r, c - 1}, {r + 1, c - 1}],

@@ -1,1 +1,1 @@
-ExUnit.start(exclude: [:reference])
+ExUnit.start()

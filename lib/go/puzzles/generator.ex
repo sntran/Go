@@ -262,7 +262,10 @@ defmodule Go.Puzzles.Generator do
   defp solve(%Puzzle{goal: %{type: :escape}} = p, min, max) do
     board = Puzzle.board(p)
 
-    case Enum.find(1..max, &Solver.attacker_wins?(board, p.goal.target, :red, :red, &1, passes_only: true)) do
+    case Enum.find(
+           1..max,
+           &Solver.attacker_wins?(board, p.goal.target, :red, :red, &1, passes_only: true)
+         ) do
       n when is_integer(n) and n >= min -> checked(%{p | goal: %{p.goal | moves: n}})
       _ -> nil
     end

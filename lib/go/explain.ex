@@ -60,7 +60,8 @@ defmodule Go.Explain do
           later = Keyword.get(opts, :caught_later, false)
           capture_texts(goal, before, move, after_blue, line, final, left, better, later)
 
-        :escape -> escape_texts(goal, before, move, after_blue, line, final, better)
+        :escape ->
+          escape_texts(goal, before, move, after_blue, line, final, better)
       end
 
     %{
@@ -300,7 +301,8 @@ defmodule Go.Explain do
 
     if left == 0,
       do: "Red has no moves left, and your fort still stands with #{roads(n)}. It is safe.",
-      else: "Your fort has #{roads(n)}. It is safe now: Red cannot catch it, not even with more moves."
+      else:
+        "Your fort has #{roads(n)}. It is safe now: Red cannot catch it, not even with more moves."
   end
 
   ## Helpers.

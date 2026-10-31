@@ -145,19 +145,19 @@ defmodule Go.PuzzlesTest do
       }
     end
 
-    defp small_escape_capture do
-      t = Templates.escape_capture()
+    defp small_escape_extend do
+      t = Templates.escape_extend()
       %{t | helpers: false, bases: fn -> Enum.take(t.bases.(), 2) end}
     end
 
     test "each template gives good, different puzzles that pass the checks" do
       %{puzzles: puzzles, stats: stats} =
-        Generator.run(templates: [small_edge_chase(), small_escape_capture()])
+        Generator.run(templates: [small_edge_chase(), small_escape_extend()])
 
       assert Enum.map(stats, & &1.template) == [
                "edge_chase",
                "edge_chase_swapped",
-               "escape_capture"
+               "escape_extend"
              ]
 
       for s <- stats do
@@ -165,7 +165,7 @@ defmodule Go.PuzzlesTest do
       end
 
       assert Enum.find(stats, &(&1.template == "edge_chase")).good > 0
-      assert Enum.find(stats, &(&1.template == "escape_capture")).good > 0
+      assert Enum.find(stats, &(&1.template == "escape_extend")).good > 0
 
       keys = Enum.map(puzzles, &Symmetry.key/1)
       assert length(Enum.uniq(keys)) == length(keys)
@@ -177,11 +177,11 @@ defmodule Go.PuzzlesTest do
       end
     end
 
-    test "the edge chase needs a red helper: the plain base fails the deep check" do
+    test "the edge chase in 2 moves with no red helper fails the deep check" do
       %{puzzles: puzzles} = Generator.run(templates: [small_edge_chase()])
-      captures = Enum.filter(puzzles, &(&1.goal.type == :capture))
-      assert captures != []
-      assert Enum.all?(captures, &(length(&1.red) == 2))
+      plain = Symmetry.key(%{Fixtures.edge_chase() | red: [{0, 3}]})
+      assert Enum.any?(puzzles, &(&1.goal.type == :capture))
+      refute Enum.any?(puzzles, &(Symmetry.key(&1) == plain))
       assert Enum.all?(puzzles, &(&1.goal.type == :escape or &1.goal.moves >= 2))
     end
 
@@ -190,7 +190,9 @@ defmodule Go.PuzzlesTest do
       %{puzzles: before} = Generator.run(templates: [small_edge_chase()])
       assert Enum.any?(before, &(Symmetry.key(&1) == key))
 
-      %{puzzles: puzzles} = Generator.run(templates: [small_edge_chase()], known: [Fixtures.edge_chase()])
+      %{puzzles: puzzles} =
+        Generator.run(templates: [small_edge_chase()], known: [Fixtures.edge_chase()])
+
       refute Enum.any?(puzzles, &(Symmetry.key(&1) == key))
     end
 

@@ -44,7 +44,9 @@ defmodule Go.ReferenceSolver do
 
     board
     |> Board.legal_moves(color)
-    |> Enum.sort_by(fn {r, c} -> Enum.min(Enum.map(stones, fn {a, b} -> abs(a - r) + abs(b - c) end)) end)
+    |> Enum.sort_by(fn {r, c} ->
+      Enum.min(Enum.map(stones, fn {a, b} -> abs(a - r) + abs(b - c) end))
+    end)
   end
 
   defp search(board, target, attacker, to_move, n, cache) do
@@ -70,7 +72,8 @@ defmodule Go.ReferenceSolver do
             {false, cache}
 
           to_move == attacker ->
-            Enum.reduce_while(ordered(board, target, attacker), {false, cache}, fn move, {false, cache} ->
+            Enum.reduce_while(ordered(board, target, attacker), {false, cache}, fn move,
+                                                                                   {false, cache} ->
               {:ok, next, _} = Board.play(board, attacker, move)
 
               cond do

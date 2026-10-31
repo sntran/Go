@@ -7,7 +7,8 @@ defmodule Go.Puzzles.Check do
     * It cannot be solved in fewer moves. For an escape puzzle: if Blue
       does nothing, Red needs all its moves to capture the fort.
     * Each tempting wrong move of a capture puzzle really fails: Blue
-      cannot capture Red in the move limit plus `Go.Goal.deep/0` moves.
+      cannot capture Red in the move limit plus `Go.Goal.deep/0` moves,
+      and Red with 5 liberties or more has escaped.
       A tempting move touches the target group or takes stones.
     * In an escape puzzle, the fort lives also after the move limit: a
       blue move is correct only if Red cannot capture the fort in the move
@@ -45,7 +46,8 @@ defmodule Go.Puzzles.Check do
         "the target is not a #{Goal.defender(goal)} stone"
       )
 
-    good = if errors == [], do: Goal.good_moves(goal, board, n), else: []
+    # Two good moves are enough to know that the answer is not unique.
+    good = if errors == [], do: Goal.good_moves(goal, board, n, max: 2), else: []
     answer = puzzle.answer || List.first(good)
     traps = if errors == [], do: traps(goal, board, good), else: []
 
@@ -53,7 +55,7 @@ defmodule Go.Puzzles.Check do
       errors
       |> add(
         good != [answer],
-        "the correct first moves are #{inspect(good)}, not exactly [#{inspect(answer)}]"
+        "the correct first moves #{if good == [], do: "are", else: "include"} #{inspect(good)}, not exactly [#{inspect(answer)}]"
       )
       |> add(not needs_all_moves?(goal, board, n), "it can be solved in fewer moves")
 
@@ -125,7 +127,7 @@ defmodule Go.Puzzles.Check do
     {:ok, next, _} = Board.play(board, :blue, trap)
 
     not Solver.captured?(next, goal.target, :red) and
-      not Solver.attacker_wins?(next, goal.target, :blue, :red, depth - 1)
+      not Solver.attacker_wins?(next, goal.target, :blue, :red, depth - 1, Goal.deep_opts())
   end
 
   # A wrong escape move is wrong in real Go already (see Go.Goal).
@@ -139,7 +141,7 @@ defmodule Go.Puzzles.Check do
     deep == Goal.deep() or
       (
         {:ok, next, _} = Board.play(board, :blue, answer)
-        not Solver.attacker_wins?(next, goal.target, :red, :red, depth)
+        not Solver.attacker_wins?(next, goal.target, :red, :red, depth, Goal.deep_opts())
       )
   end
 end
