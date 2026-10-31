@@ -83,7 +83,12 @@ defmodule Go.Puzzle do
         p.wrong
         |> Enum.sort()
         |> Enum.map(fn {point, t} ->
-          %{"at" => pt(point), "what" => t.what, "why" => t.why, "reply" => t[:reply] && pt(t[:reply])}
+          %{
+            "at" => pt(point),
+            "what" => t.what,
+            "why" => t.why,
+            "reply" => t[:reply] && pt(t[:reply])
+          }
         end),
       "grade" => Map.new(p.grade, fn {k, v} -> {Atom.to_string(k), v} end),
       "hide_roads" => p.hide_roads
@@ -118,7 +123,9 @@ defmodule Go.Puzzle do
     }
   end
 
-  defp wrong(%{"reply" => [_, _] = reply} = w), do: %{what: w["what"], why: w["why"], reply: point(reply)}
+  defp wrong(%{"reply" => [_, _] = reply} = w),
+    do: %{what: w["what"], why: w["why"], reply: point(reply)}
+
   defp wrong(w), do: %{what: w["what"], why: w["why"]}
 
   defp pt(nil), do: nil

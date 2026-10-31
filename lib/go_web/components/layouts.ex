@@ -1,7 +1,6 @@
 defmodule GoWeb.Layouts do
   @moduledoc """
-  This module holds layouts and related functionality
-  used by your application.
+  The layouts of the app.
   """
   use GoWeb, :html
 
@@ -12,11 +11,7 @@ defmodule GoWeb.Layouts do
   embed_templates "layouts/*"
 
   @doc """
-  Renders your app layout.
-
-  This function is typically invoked from every template,
-  and it often contains your application menu, sidebar,
-  or similar.
+  The layout of the app: a header with the name and the theme toggle.
 
   ## Examples
 
@@ -26,49 +21,44 @@ defmodule GoWeb.Layouts do
 
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
-
-  attr :current_scope, :map,
-    default: nil,
-    doc: "the current [scope](https://phoenix.hexdocs.pm/scopes.html)"
-
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://phoenix.hexdocs.pm/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-    </header>
-
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
-        {render_slot(@inner_block)}
-      </div>
-    </main>
+    <div class="wrap">
+      <header class="top">
+        <.link navigate={~p"/"} class="brand" aria-label="Tower Go, home">
+          <.brand_icon />
+          <span class="brand-name">Tower Go</span>
+        </.link>
+        <.theme_toggle />
+      </header>
+      {render_slot(@inner_block)}
+    </div>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc "The icon of the app: a blue castle and a red castle."
+  def brand_icon(assigns) do
+    ~H"""
+    <svg width="48" height="34" viewBox="0 0 48 34" aria-hidden="true" class="brand-icon">
+      <g class="tower tower-blue">
+        <rect x="3" y="12" width="16" height="18" rx="1.5" class="body" />
+        <rect x="3" y="7" width="4.5" height="5" class="body" />
+        <rect x="8.8" y="7" width="4.5" height="5" class="body" />
+        <rect x="14.5" y="7" width="4.5" height="5" class="body" />
+        <path d="M8 30v-6a3 3 0 0 1 6 0v6z" class="door" />
+      </g>
+      <g class="tower tower-red">
+        <rect x="28" y="12" width="16" height="18" rx="1.5" class="body" />
+        <rect x="28" y="7" width="4.5" height="5" class="body" />
+        <rect x="33.8" y="7" width="4.5" height="5" class="body" />
+        <rect x="39.5" y="7" width="4.5" height="5" class="body" />
+        <path d="M33 30v-6a3 3 0 0 1 6 0v6z" class="door" />
+      </g>
+    </svg>
     """
   end
 
@@ -128,13 +118,14 @@ defmodule GoWeb.Layouts do
   """
   def theme_toggle(assigns) do
     ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
+    <div class="theme-toggle card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
       <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 [[data-theme-source=system]_&]:!left-0 transition-[left]" />
 
       <button
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="system"
+        aria-label="Use the theme of the system"
       >
         <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
@@ -143,6 +134,7 @@ defmodule GoWeb.Layouts do
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="light"
+        aria-label="Use the light theme"
       >
         <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>
@@ -151,6 +143,7 @@ defmodule GoWeb.Layouts do
         class="flex p-2 cursor-pointer w-1/3"
         phx-click={JS.dispatch("phx:set-theme")}
         data-phx-theme="dark"
+        aria-label="Use the dark theme"
       >
         <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
       </button>

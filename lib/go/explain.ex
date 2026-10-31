@@ -32,7 +32,15 @@ defmodule Go.Explain do
     * `start?`: true if `before` is the start of the puzzle. Then the
       hand-written texts of the puzzle apply.
   """
-  @spec wrong(Puzzle.t(), Board.t(), Board.point(), list(), non_neg_integer(), Board.point() | nil, boolean()) ::
+  @spec wrong(
+          Puzzle.t(),
+          Board.t(),
+          Board.point(),
+          list(),
+          non_neg_integer(),
+          Board.point() | nil,
+          boolean()
+        ) ::
           feedback()
   def wrong(puzzle, before, move, line, left, better, start?) do
     goal = puzzle.goal
@@ -84,11 +92,12 @@ defmodule Go.Explain do
 
           cond do
             captured != [] ->
-              {"Red took #{towers(length(captured))} of yours. Now Red has #{roads(roads_after)}.", joined?,
-               length(captured)}
+              {"Red took #{towers(length(captured))} of yours. Now Red has #{roads(roads_after)}.",
+               joined?, length(captured)}
 
             joined? ->
-              {"Red ran #{dir} and joined its friend. Now Red has #{roads(roads_after)}.", true, 0}
+              {"Red ran #{dir} and joined its friend. Now Red has #{roads(roads_after)}.", true,
+               0}
 
             true ->
               {"Red ran #{dir}. Now Red has #{roads(roads_after)}.", false, 0}
@@ -126,9 +135,14 @@ defmodule Go.Explain do
 
     second =
       cond do
-        blue_left == 0 -> " You have no moves left."
-        roads_after > blue_left -> " You have #{moves(blue_left)} left. That is not enough to close #{roads(roads_after)}."
-        true -> " Red can now run away from each of your moves."
+        blue_left == 0 ->
+          " You have no moves left."
+
+        roads_after > blue_left ->
+          " You have #{moves(blue_left)} left. That is not enough to close #{roads(roads_after)}."
+
+        true ->
+          " Red can now run away from each of your moves."
       end
 
     %{
@@ -235,14 +249,20 @@ defmodule Go.Explain do
   ## Texts after good moves.
 
   @doc "The message after a good blue move and Red's reply."
-  @spec after_reply(Go.Goal.t(), Board.t(), Board.point() | :pass, Board.t(), non_neg_integer()) :: String.t()
+  @spec after_reply(Go.Goal.t(), Board.t(), Board.point() | :pass, Board.t(), non_neg_integer()) ::
+          String.t()
   def after_reply(%{type: :capture} = goal, before_red, red, final, left) do
     n = Board.liberty_count(final, goal.target)
 
     ran =
       case red do
-        :pass -> "Red waited."
-        r -> if joined?(before_red, final, goal.target), do: "Red joined its friend.", else: "Red ran #{direction(before_red, goal.target, r)}."
+        :pass ->
+          "Red waited."
+
+        r ->
+          if joined?(before_red, final, goal.target),
+            do: "Red joined its friend.",
+            else: "Red ran #{direction(before_red, goal.target, r)}."
       end
 
     "Good move! #{ran} Red has #{roads(n)}. You have #{moves(left)} left."

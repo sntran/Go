@@ -10,6 +10,10 @@ import Config
 config :go,
   generators: [timestamp_type: :utc_datetime]
 
+# The time (in milliseconds) between the moves that Red plays, and
+# between the moves of "Watch again".
+config :go, red_delay: 700, watch_delay: 900
+
 # Configure the endpoint
 config :go, GoWeb.Endpoint,
   url: [host: "localhost"],

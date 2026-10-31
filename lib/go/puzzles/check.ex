@@ -38,13 +38,22 @@ defmodule Go.Puzzles.Check do
 
     errors =
       []
-      |> add(Board.get(board, goal.target) != Goal.defender(goal), "the target is not a #{Goal.defender(goal)} stone")
-      |> add(good != [answer], "the correct first moves are #{inspect(good)}, not exactly [#{inspect(answer)}]")
+      |> add(
+        Board.get(board, goal.target) != Goal.defender(goal),
+        "the target is not a #{Goal.defender(goal)} stone"
+      )
+      |> add(
+        good != [answer],
+        "the correct first moves are #{inspect(good)}, not exactly [#{inspect(answer)}]"
+      )
       |> add(not needs_all_moves?(goal, board, n, answer), "it can be solved in fewer moves")
       |> add(Enum.reject(traps, &trap_fails?(goal, board, n + deep, &1)), fn bad ->
         "the tempting moves #{inspect(bad)} do not fail at a depth of #{n + deep}"
       end)
-      |> add(not answer_holds?(goal, board, n + deep, answer), "the answer does not hold at a depth of #{n + deep}")
+      |> add(
+        not answer_holds?(goal, board, n + deep, answer),
+        "the answer does not hold at a depth of #{n + deep}"
+      )
       |> Enum.reverse()
 
     %{

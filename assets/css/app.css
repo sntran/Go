@@ -103,3 +103,139 @@
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
 /* This file is for your main application CSS */
+
+/* Tower Go. The look comes from the prototype in docs/plans. */
+:root {
+  --bg: #F2F4EE; --fg: #1F2A22; --muted: #58665C; --panel: #FFFFFF; --rule: #D5DDD2;
+  --grass: #E3EFD3; --path: #B9D19A; --wood: #DDB06D; --woodline: #6B4F2A;
+  --blue: #378ADD; --blue-d: #185FA5; --red: #D85A30; --red-d: #993C1D;
+  --black: #2C2C2A; --white: #F4F2EA; --whiteline: #7C7A72;
+  --accent: #2F45A8; --accent-fg: #FFFFFF; --good: #22744A; --bad: #B0392A;
+  --warn-bg: #FBE6AE; --warn: #B57C0E; --alarm: #E24B4A; --door: #2C2C2A; --star: #E0A100;
+  --display: 'Baloo 2', ui-rounded, 'Arial Rounded MT Bold', system-ui, sans-serif;
+  --body: 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111813; --fg: #E4ECE4; --muted: #9AAB9E; --panel: #18211B; --rule: #2C3A30;
+    --grass: #22301C; --path: #3E5530; --accent: #94A3F5; --accent-fg: #111813;
+    --good: #6FCB95; --bad: #F2907F; --warn-bg: #4A3A10; --warn: #E8B946; --star: #F2C94C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111813; --fg: #E4ECE4; --muted: #9AAB9E; --panel: #18211B; --rule: #2C3A30;
+  --grass: #22301C; --path: #3E5530; --accent: #94A3F5; --accent-fg: #111813;
+  --good: #6FCB95; --bad: #F2907F; --warn-bg: #4A3A10; --warn: #E8B946; --star: #F2C94C;
+  color-scheme: dark;
+}
+
+html { background: var(--bg); }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 40px;
+}
+.wrap { max-width: 1020px; margin: 0 auto; display: grid; gap: 20px; }
+header.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--fg); text-decoration: none; }
+.brand-name { font-family: var(--display); font-weight: 700; font-size: 2rem; line-height: 1; }
+.theme-toggle { width: 7.5rem; }
+
+h1 { font-family: var(--display); font-weight: 700; font-size: 1.75rem; margin: 0; line-height: 1.15; text-wrap: balance; }
+.kicker { font: 700 12px var(--body); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.back-link { color: var(--accent); text-decoration: underline; }
+.say { margin: 0; max-width: 60ch; font-size: 1.06rem; }
+.realgo { margin: 0; max-width: 60ch; font-size: .92rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 12px; }
+.realgo b { color: var(--fg); }
+
+/* On a phone: the goal, then the board, then the feedback. On a wide
+   screen: the goal and the feedback on the left, the board on the right. */
+.main { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "play" "notes"; }
+@media (min-width: 860px) {
+  .main { grid-template-columns: minmax(0, 1fr) minmax(0, 480px); grid-template-areas: "head play" "notes play"; grid-template-rows: auto 1fr; align-items: start; column-gap: 22px; }
+}
+.head { grid-area: head; display: grid; gap: 10px; min-width: 0; }
+.notes { grid-area: notes; display: grid; gap: 12px; min-width: 0; align-content: start; }
+.play { grid-area: play; display: grid; gap: 10px; min-width: 0; }
+
+.fb { display: grid; gap: 6px; background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; max-width: 60ch; }
+.fb p { margin: 0; }
+.fb .t { font-family: var(--display); font-weight: 700; font-size: 1.25rem; line-height: 1.2; }
+.fb.bad .t { color: var(--bad); }
+.fb.good .t { color: var(--good); }
+.stars-big { font-size: 2rem; line-height: 1; letter-spacing: .1em; }
+.star { color: var(--rule); }
+.star.on { color: var(--star); }
+.stars { color: var(--star); font-weight: 700; margin-left: 8px; }
+
+.msg { margin: 0; font-weight: 700; min-height: 1.6em; color: var(--muted); }
+.msg.busy { color: var(--red-d); }
+.puzzle-status { margin: 0; display: flex; flex-wrap: wrap; gap: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.hidden-roads { color: var(--muted); font-weight: 400; }
+
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pill { font: 700 15px var(--body); padding: 10px 16px; border-radius: 999px; border: 2px solid var(--rule); background: var(--panel); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+.pill.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.pill.small { font-size: 14px; padding: 8px 13px; }
+.pill:disabled { opacity: .5; cursor: default; }
+.pill:focus-visible, .seg button:focus-visible, .world-link:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 2px solid var(--rule); border-radius: 18px; overflow: hidden; }
+.seg button { font: 700 14px var(--body); padding: 8px 12px; border: 0; background: var(--panel); color: var(--muted); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+
+/* The board. */
+svg.board { width: 100%; max-width: 480px; aspect-ratio: 1; display: block; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.ground-grass { fill: var(--grass); }
+.ground-wood { fill: var(--wood); }
+.path { stroke: var(--path); stroke-width: 3; }
+.gridline { stroke: var(--woodline); stroke-width: 1.3; }
+.glow { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 2.5; animation: pulse .9s ease-in-out infinite; }
+.road { fill: none; stroke-width: 2.5; stroke-dasharray: 3 3; }
+.road-blue { stroke: var(--blue); }
+.road-red { stroke: var(--red); }
+.dot { opacity: .65; }
+.dot-blue { fill: var(--blue); }
+.dot-red { fill: var(--red); }
+.wall-blue .wall-base { stroke: var(--blue-d); }
+.wall-blue .wall-top { stroke: var(--blue); stroke-dasharray: 7 3; }
+.wall-red .wall-base { stroke: var(--red-d); }
+.wall-red .wall-top { stroke: var(--red); stroke-dasharray: 7 3; }
+.alarm { fill: none; stroke: var(--alarm); stroke-width: 2.5; stroke-dasharray: 5 4; }
+.tower .body { stroke-width: 1.6; }
+.tower-blue .body { fill: var(--blue); stroke: var(--blue-d); }
+.tower-red .body { fill: var(--red); stroke: var(--red-d); }
+.tower .door { fill: var(--door); }
+.stone { stroke-width: 1.2; }
+.stone-blue { fill: var(--black); stroke: var(--black); }
+.stone-red { fill: var(--white); stroke: var(--whiteline); }
+.flag-pole { stroke: var(--fg); stroke-width: 1.6; }
+.flag-cloth { fill: var(--warn); }
+.mark { fill: none; stroke-width: 2.5; }
+.mark-blue { stroke: var(--blue); }
+.mark-red { stroke: var(--red); }
+.count-ring { fill: var(--panel); stroke-width: 2; }
+.count-blue { stroke: var(--blue); }
+.count-red { stroke: var(--red); }
+.count text { font: 700 13px var(--body); fill: var(--fg); }
+.spot { fill: transparent; cursor: pointer; }
+.spot:focus { outline: none; }
+
+@keyframes wob { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
+.danger { animation: wob .6s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+@keyframes crumble { 0% { transform: none; opacity: 1; } 50% { transform: translateY(3px) rotate(10deg) scaleY(.7); opacity: .9; } 100% { transform: translateY(8px) rotate(18deg) scaleY(.15); opacity: 0; } }
+.fall { animation: crumble .9s ease-in forwards; transform-box: fill-box; transform-origin: 50% 100%; pointer-events: none; }
+@keyframes pulse { 0%, 100% { opacity: .3; } 50% { opacity: .95; } }
+@media (prefers-reduced-motion: reduce) { .danger, .glow { animation: none; } .fall { animation: none; opacity: 0; } }
+
+/* The home page. */
+.home, .done { display: grid; gap: 18px; }
+.intro { display: grid; gap: 8px; }
+.worlds { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+.world-link { display: grid; gap: 4px; height: 100%; padding: 16px 18px; border-radius: 16px; border: 2px solid var(--rule); background: var(--panel); color: var(--fg); text-decoration: none; }
+a.world-link:hover { border-color: var(--accent); }
+.world-name { font-family: var(--display); font-weight: 700; font-size: 1.5rem; line-height: 1.1; }
+.world-about { color: var(--muted); }
+.world-progress { font-weight: 700; }
+.world.soon .world-link { opacity: .55; }

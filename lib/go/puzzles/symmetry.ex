@@ -59,8 +59,8 @@ defmodule Go.Puzzles.Symmetry do
     |> Enum.map(fn sym ->
       f = &map_point(sym, p.size, &1)
 
-      {p.size, p.goal.type, p.goal.moves, Enum.sort(Enum.map(p.blue, f)), Enum.sort(Enum.map(p.red, f)),
-       Enum.sort(Enum.map(target_group, f))}
+      {p.size, p.goal.type, p.goal.moves, Enum.sort(Enum.map(p.blue, f)),
+       Enum.sort(Enum.map(p.red, f)), Enum.sort(Enum.map(target_group, f))}
     end)
     |> Enum.min()
   end

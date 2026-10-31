@@ -99,7 +99,9 @@ defmodule Go.Puzzles do
     puzzles =
       (starter ++ generated.puzzles)
       |> Enum.with_index()
-      |> Enum.sort_by(fn {p, i} -> {world_index(p.world), p.grade.score, p.source != :hand, i} end)
+      |> Enum.sort_by(fn {p, i} ->
+        {world_index(p.world), p.grade.score, p.source != :hand, i}
+      end)
       |> Enum.map(&elem(&1, 0))
 
     %{puzzles: puzzles, stats: generated.stats}

@@ -20,3 +20,7 @@ config :phoenix_live_view,
 # Sort query params output of verified routes for robust url comparisons
 config :phoenix,
   sort_verified_routes_query_params: true
+
+# Red plays at once in the tests. A test can set a delay to check the
+# screen while Red plays.
+config :go, red_delay: 0, watch_delay: 0

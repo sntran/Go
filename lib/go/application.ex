@@ -11,8 +11,7 @@ defmodule Go.Application do
       GoWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:go, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Go.PubSub},
-      # Start a worker by calling: Go.Worker.start_link(arg)
-      # {Go.Worker, arg},
+      Go.Progress,
       # Start to serve requests, typically the last entry
       GoWeb.Endpoint
     ]

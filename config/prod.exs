@@ -24,3 +24,7 @@ config :logger, level: :info
 
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.
+
+# The default poller of telemetry_poller is off: beam.com on Workers does
+# not support erlang:memory/0 (see examples/phoenix_demo of BEAM.com).
+config :telemetry_poller, :default, false

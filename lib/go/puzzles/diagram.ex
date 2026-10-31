@@ -20,7 +20,10 @@ defmodule Go.Puzzles.Diagram do
       do: raise(ArgumentError, "a diagram must be square: #{inspect(rows)}")
 
     marks =
-      for {row, r} <- Enum.with_index(cells), {ch, c} <- Enum.with_index(row), ch != ".", do: {ch, {r, c}}
+      for {row, r} <- Enum.with_index(cells),
+          {ch, c} <- Enum.with_index(row),
+          ch != ".",
+          do: {ch, {r, c}}
 
     %{
       size: size,

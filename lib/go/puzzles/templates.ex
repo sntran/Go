@@ -41,7 +41,15 @@ defmodule Go.Puzzles.Templates do
   @doc "All templates."
   @spec all() :: [t()]
   def all do
-    [capture_in_1(), edge_chase(), ladder(), net(), escape_extend(), escape_capture(), escape_connect()]
+    [
+      capture_in_1(),
+      edge_chase(),
+      ladder(),
+      net(),
+      escape_extend(),
+      escape_capture(),
+      escape_connect()
+    ]
   end
 
   @doc "Capture in 1: the red group has 1 road left."
@@ -61,17 +69,29 @@ defmodule Go.Puzzles.Templates do
         for size <- [5],
             {stones, _} <- red_lines(size),
             open <- roads(size, stones),
-            do: %{size: size, red: stones, blue: roads(size, stones) -- [open], target: hd(stones), max: 1}
+            do: %{
+              size: size,
+              red: stones,
+              blue: roads(size, stones) -- [open],
+              target: hd(stones),
+              max: 1
+            }
       end
     }
   end
 
   defp red_lines(size) do
-    for r <- 0..2, c <- 0..2, len <- 1..3, dir <- [:h, :v], len == 1 or dir == :h or r + len <= size do
+    for r <- 0..2,
+        c <- 0..2,
+        len <- 1..3,
+        dir <- [:h, :v],
+        len == 1 or dir == :h or r + len <= size do
       stones = for k <- 0..(len - 1), do: if(dir == :h, do: {r, c + k}, else: {r + k, c})
       {stones, len}
     end
-    |> Enum.filter(fn {stones, _} -> Enum.all?(stones, fn {r, c} -> r < size and c < size end) end)
+    |> Enum.filter(fn {stones, _} ->
+      Enum.all?(stones, fn {r, c} -> r < size and c < size end)
+    end)
     |> Enum.uniq_by(fn {s, _} -> Enum.sort(s) end)
   end
 
@@ -92,9 +112,11 @@ defmodule Go.Puzzles.Templates do
       swap: true,
       limit: 10,
       min: 2,
-      say: "The red tower stands on the edge of the board. The edge closes roads for free. Chase Red along the edge.",
+      say:
+        "The red tower stands on the edge of the board. The edge closes roads for free. Chase Red along the edge.",
       hint: "Close the road that leads away from the edge and the corner.",
-      better: "Close the road on the open side. Then Red can only run toward the corner, where it has no roads.",
+      better:
+        "Close the road on the open side. Then Red can only run toward the corner, where it has no roads.",
       trap_why: "Your move chased Red away from the corner, into open space.",
       bases: fn ->
         for size <- [5, 7], c <- 1..(size - 2) do
@@ -113,13 +135,21 @@ defmodule Go.Puzzles.Templates do
       swap: true,
       limit: 8,
       min: 3,
-      say: "Chase Red in steps, like a ladder. Each time, leave Red only 1 road, and push it toward the edge.",
-      hint: "Close the road that leaves Red only 1 road, and push Red toward your towers or the edge.",
+      say:
+        "Chase Red in steps, like a ladder. Each time, leave Red only 1 road, and push it toward the edge.",
+      hint:
+        "Close the road that leaves Red only 1 road, and push Red toward your towers or the edge.",
       better: nil,
       trap_why: "Your move left Red 2 roads, so Red could run.",
       bases: fn ->
         for size <- [5, 7], r <- 1..3, c <- 1..3, r < size - 1, c < size - 1 do
-          %{size: size, red: [{r, c}], blue: [{r - 1, c}, {r, c - 1}, {r + 1, c + 1}], target: {r, c}, max: 4}
+          %{
+            size: size,
+            red: [{r, c}],
+            blue: [{r - 1, c}, {r, c - 1}, {r + 1, c + 1}],
+            target: {r, c},
+            max: 4
+          }
         end
       end
     }
@@ -134,7 +164,8 @@ defmodule Go.Puzzles.Templates do
       swap: false,
       limit: 10,
       min: 3,
-      say: "Red wants to run to its friends. Throw a net: you do not need to touch Red to catch it.",
+      say:
+        "Red wants to run to its friends. Throw a net: you do not need to touch Red to catch it.",
       hint: "Do not touch Red. Close the way out with one tower.",
       better: "Build corner to corner from Red. That closes both ways out, like a net.",
       trap_why: "Your move touched Red, but Red could run away to its friend on the other side.",
@@ -214,7 +245,8 @@ defmodule Go.Puzzles.Templates do
       swap: false,
       limit: 8,
       min: 1,
-      say: "Your tower is in danger. A friend is near. Towers that touch join into one fort and share their roads.",
+      say:
+        "Your tower is in danger. A friend is near. Towers that touch join into one fort and share their roads.",
       hint: "Which spot joins your tower to its friend?",
       better: "Join your friend. Then your fort shares all the roads of both towers.",
       trap_why: "Your move did not join your tower to its friend.",

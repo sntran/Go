@@ -35,7 +35,14 @@ defmodule Go.Solver do
   defender only passes: this tells if the target is in danger when the
   defender does nothing.
   """
-  @spec attacker_wins?(Board.t(), Board.point(), Board.color(), Board.color(), non_neg_integer(), keyword()) ::
+  @spec attacker_wins?(
+          Board.t(),
+          Board.point(),
+          Board.color(),
+          Board.color(),
+          non_neg_integer(),
+          keyword()
+        ) ::
           boolean()
   def attacker_wins?(board, target, attacker, to_move, n, opts \\ []) do
     fight = fight(target, attacker, opts)
@@ -47,7 +54,14 @@ defmodule Go.Solver do
   Gives the smallest number of attacker moves (from 1 to `max`) that
   captures the target, or nil.
   """
-  @spec moves_to_capture(Board.t(), Board.point(), Board.color(), Board.color(), non_neg_integer(), keyword()) ::
+  @spec moves_to_capture(
+          Board.t(),
+          Board.point(),
+          Board.color(),
+          Board.color(),
+          non_neg_integer(),
+          keyword()
+        ) ::
           pos_integer() | nil
   def moves_to_capture(board, target, attacker, to_move, max, opts \\ []) do
     fight = fight(target, attacker, opts)

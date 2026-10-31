@@ -57,7 +57,8 @@ defmodule Go.Goal do
 
   def reached?(%{type: :escape} = goal, board, left) do
     not Solver.captured?(board, goal.target, :blue) and
-      (left == 0 or not Solver.attacker_wins?(board, goal.target, :red, :red, left, passes_only: true))
+      (left == 0 or
+         not Solver.attacker_wins?(board, goal.target, :red, :red, left, passes_only: true))
   end
 
   @doc """

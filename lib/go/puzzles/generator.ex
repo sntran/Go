@@ -48,7 +48,11 @@ defmodule Go.Puzzles.Generator do
       end)
 
     results = List.flatten(results)
-    %{puzzles: Enum.flat_map(results, & &1.puzzles), stats: Enum.map(results, &Map.delete(&1, :puzzles))}
+
+    %{
+      puzzles: Enum.flat_map(results, & &1.puzzles),
+      stats: Enum.map(results, &Map.delete(&1, :puzzles))
+    }
   end
 
   defp generate(template, type, swapped?, seen) do
@@ -59,7 +63,14 @@ defmodule Go.Puzzles.Generator do
       |> Enum.flat_map(&variations(&1, template.helpers))
       |> Enum.map(&if(swapped?, do: swap(&1), else: &1))
 
-    acc = %{template: name, variations: length(variations), valid: 0, different: 0, good: 0, good_list: []}
+    acc = %{
+      template: name,
+      variations: length(variations),
+      valid: 0,
+      different: 0,
+      good: 0,
+      good_list: []
+    }
 
     {acc, seen} =
       Enum.reduce(variations, {acc, seen}, fn base, {acc, seen} ->
@@ -89,7 +100,9 @@ defmodule Go.Puzzles.Generator do
       kept
       |> Enum.map(&Symmetry.transform(&1, Enum.random(Symmetry.all())))
       |> Enum.with_index(1)
-      |> Enum.map(fn {p, i} -> %{p | id: "#{name}-#{String.pad_leading(Integer.to_string(i), 2, "0")}"} end)
+      |> Enum.map(fn {p, i} ->
+        %{p | id: "#{name}-#{String.pad_leading(Integer.to_string(i), 2, "0")}"}
+      end)
 
     {%{
        template: name,
@@ -127,7 +140,12 @@ defmodule Go.Puzzles.Generator do
   end
 
   defp shifts(base) do
-    for dr <- -2..2, dc <- -2..2, {dr, dc} != {0, 0}, moved = shift(base, dr, dc), moved != nil, do: moved
+    for dr <- -2..2,
+        dc <- -2..2,
+        {dr, dc} != {0, 0},
+        moved = shift(base, dr, dc),
+        moved != nil,
+        do: moved
   end
 
   defp shift(base, dr, dc) do
@@ -156,7 +174,10 @@ defmodule Go.Puzzles.Generator do
         q <- Board.neighbors(board, p) ++ Board.diagonals(board, p),
         Board.get(board, q) == nil do
       move = fn list -> [q | List.delete(list, p)] end
-      if color == :blue, do: %{base | blue: move.(base.blue)}, else: %{base | red: move.(base.red)}
+
+      if color == :blue,
+        do: %{base | blue: move.(base.blue)},
+        else: %{base | red: move.(base.red)}
     end
   end
 
@@ -255,7 +276,9 @@ defmodule Go.Puzzles.Generator do
   end
 
   defp template_trap_why(%Puzzle{template: name, goal: %{type: type}}) do
-    Enum.find_value(Templates.all(), fn t -> if t.name == name and t.type == type, do: t.trap_why end)
+    Enum.find_value(Templates.all(), fn t ->
+      if t.name == name and t.type == type, do: t.trap_why
+    end)
   end
 
   @doc "The title of a puzzle, from its goal."

@@ -56,8 +56,11 @@ defmodule Go.Play do
     }
   end
 
-  defp start_message(%Puzzle{goal: %{type: :capture}}), do: "You are Blue. Tap a spot to build a tower."
-  defp start_message(%Puzzle{goal: %{type: :escape}}), do: "You are Blue. Red attacks your fort. Tap a spot to build."
+  defp start_message(%Puzzle{goal: %{type: :capture}}),
+    do: "You are Blue. Tap a spot to build a tower."
+
+  defp start_message(%Puzzle{goal: %{type: :escape}}),
+    do: "You are Blue. Red attacks your fort. Tap a spot to build."
 
   @doc "True while the player must wait (Red plays, or a replay runs)."
   @spec busy?(t()) :: boolean()
@@ -94,8 +97,12 @@ defmodule Go.Play do
     end
   end
 
-  defp over_message(%{status: :solved}), do: "You solved this puzzle! Tap Next puzzle, or Try again."
-  defp over_message(%{status: :learned}), do: "Now you know the answer. Tap Next puzzle, or Try again."
+  defp over_message(%{status: :solved}),
+    do: "You solved this puzzle! Tap Next puzzle, or Try again."
+
+  defp over_message(%{status: :learned}),
+    do: "Now you know the answer. Tap Next puzzle, or Try again."
+
   defp over_message(_), do: "Tap Try again or Go back one move."
 
   defp illegal_message(:occupied), do: "There is a tower on that spot already. Tap an empty spot."
@@ -104,7 +111,9 @@ defmodule Go.Play do
     do:
       "You cannot build there. A tower on that spot would have no open road. You may build there only when it closes the last road of a red fort."
 
-  defp illegal_message(:ko), do: "Not yet! You cannot take back at once. Build somewhere else first."
+  defp illegal_message(:ko),
+    do: "Not yet! You cannot take back at once. Build somewhere else first."
+
   defp illegal_message(:off_board), do: "Tap a spot on the board."
 
   defp blue_moved(play, point, next, captured) do
@@ -133,7 +142,14 @@ defmodule Go.Play do
 
       Goal.good_move?(goal, before, snapshot.left, point) ->
         red = Goal.red_move(goal, next, left)
-        %{play | status: :red_turn, pending: [{:red, red}], outcome: :continue, message: "Red is thinking…"}
+
+        %{
+          play
+          | status: :red_turn,
+            pending: [{:red, red}],
+            outcome: :continue,
+            message: "Red is thinking…"
+        }
 
       true ->
         punish(play, goal, before, point, snapshot.left, snapshot.moves == [])
@@ -148,13 +164,21 @@ defmodule Go.Play do
     feedback = Explain.wrong(play.puzzle, before, point, line, left_before, better, start?)
     steps = Enum.map(line, fn {color, move, _} -> {color, move} end)
 
-    %{play | status: :red_turn, pending: steps, outcome: {:failed, feedback}, message: "Red is thinking…"}
+    %{
+      play
+      | status: :red_turn,
+        pending: steps,
+        outcome: {:failed, feedback},
+        message: "Red is thinking…"
+    }
   end
 
   # Red's punishment. In an escape puzzle, play it out until the fort falls.
   # `reply` is a hand-written red reply. It is used only if it punishes.
   defp punish_line(%{type: :capture} = goal, board, left, reply) do
-    move = if punishes?(goal, board, left, reply), do: reply, else: Goal.red_move(goal, board, left)
+    move =
+      if punishes?(goal, board, left, reply), do: reply, else: Goal.red_move(goal, board, left)
+
     {:ok, _, captured} = Board.play(board, :red, move)
     [{:red, move, captured}]
   end
@@ -172,7 +196,8 @@ defmodule Go.Play do
       {:ok, next, _} ->
         case goal.type do
           :capture ->
-            not Go.Solver.captured?(next, goal.target, :red) and not Goal.reachable?(goal, next, left)
+            not Go.Solver.captured?(next, goal.target, :red) and
+              not Goal.reachable?(goal, next, left)
 
           :escape ->
             Go.Solver.captured?(next, goal.target, :blue) or
@@ -243,7 +268,13 @@ defmodule Go.Play do
   defp add_step(last_turn, step), do: %{last_turn | steps: last_turn.steps ++ [step]}
 
   defp finish(%{outcome: {:failed, feedback}} = play, _before, _move, _captured) do
-    %{play | status: :failed, outcome: nil, feedback: feedback, message: "Red got the better of that move."}
+    %{
+      play
+      | status: :failed,
+        outcome: nil,
+        feedback: feedback,
+        message: "Red got the better of that move."
+    }
   end
 
   defp finish(%{outcome: :answer} = play, _before, _move, _captured) do
@@ -276,7 +307,11 @@ defmodule Go.Play do
         %{play | status: :failed, message: "Red got away."}
 
       true ->
-        %{play | status: :playing, message: Explain.after_reply(goal, before, move, play.board, play.left)}
+        %{
+          play
+          | status: :playing,
+            message: Explain.after_reply(goal, before, move, play.board, play.left)
+        }
     end
   end
 
@@ -294,7 +329,14 @@ defmodule Go.Play do
       play
       | status: :solved,
         pending: [],
-        feedback: %{tone: :good, title: title, what: nil, why: text, better: nil, better_point: nil},
+        feedback: %{
+          tone: :good,
+          title: title,
+          what: nil,
+          why: text,
+          better: nil,
+          better_point: nil
+        },
         message: star_message(stars)
     }
   end
@@ -408,9 +450,16 @@ defmodule Go.Play do
 
   @doc "Marks the better move after a wrong move. It counts as help."
   @spec show_better(t()) :: t()
-  def show_better(%__MODULE__{status: :failed, show_better: false, feedback: %{better_point: p}} = play)
+  def show_better(
+        %__MODULE__{status: :failed, show_better: false, feedback: %{better_point: p}} = play
+      )
       when p != nil do
-    %{play | show_better: true, hints: play.hints + 1, message: "Look at the glowing spot. Go back one move and build there."}
+    %{
+      play
+      | show_better: true,
+        hints: play.hints + 1,
+        message: "Look at the glowing spot. Go back one move and build there."
+    }
   end
 
   def show_better(play), do: play
@@ -484,7 +533,11 @@ defmodule Go.Play do
     if busy?(play) do
       play
     else
-      %{play | replay: %{board: board, steps: steps, falls: [], marks: %{}, message: play.message}, message: "Watch…"}
+      %{
+        play
+        | replay: %{board: board, steps: steps, falls: [], marks: %{}, message: play.message},
+          message: "Watch…"
+      }
     end
   end
 
@@ -509,7 +562,9 @@ defmodule Go.Play do
     }
   end
 
-  def watch_step(%__MODULE__{replay: %{steps: []} = r} = play), do: %{play | replay: nil, message: r.message}
+  def watch_step(%__MODULE__{replay: %{steps: []} = r} = play),
+    do: %{play | replay: nil, message: r.message}
+
   def watch_step(play), do: play
 
   @doc "The stones that fell on the last step, to show them crumble."

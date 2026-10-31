@@ -8,6 +8,7 @@ defmodule GoWeb.Router do
     plug :put_root_layout, html: {GoWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug GoWeb.Player
   end
 
   pipeline :api do
@@ -17,7 +18,10 @@ defmodule GoWeb.Router do
   scope "/", GoWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live_session :default, session: {GoWeb.Player, :session, []} do
+      live "/", HomeLive
+      live "/play/:world", PuzzleLive
+    end
   end
 
   # Other scopes may use custom stacks.
