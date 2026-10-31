@@ -8,7 +8,7 @@ defmodule Go.Puzzles do
   """
 
   alias Go.Puzzle
-  alias Go.Puzzles.{Check, Generator, Grade, Starter}
+  alias Go.Puzzles.{Check, Generator, Grade, Proof, Starter}
 
   @key {__MODULE__, :bank}
 
@@ -98,26 +98,101 @@ defmodule Go.Puzzles do
 
     puzzles =
       (starter ++ generated.puzzles)
+      |> Task.async_stream(&%{&1 | book: book(&1)},
+        ordered: true,
+        timeout: :infinity,
+        max_concurrency: System.schedulers_online()
+      )
+      |> Enum.map(fn {:ok, p} -> p end)
+
+    {puzzles, proof} = final_check(puzzles, Keyword.get(opts, :proof_ms, 20_000))
+
+    puzzles =
+      puzzles
       |> Enum.with_index()
       |> Enum.sort_by(fn {p, i} ->
         {world_index(p.world), p.grade.score, p.source != :hand, i}
       end)
       |> Enum.map(&elem(&1, 0))
 
-    %{puzzles: puzzles, stats: generated.stats}
+    %{puzzles: puzzles, stats: generated.stats, proof: proof}
+  end
+
+  # The final check of each kept puzzle (see Go.Puzzles.Proof). It drops a
+  # generated escape puzzle when its fort dies. A starter puzzle must pass.
+  defp final_check(puzzles, :skip), do: {puzzles, nil}
+
+  defp final_check(puzzles, ms) do
+    checked =
+      puzzles
+      |> Task.async_stream(&{&1, Proof.run(&1, ms)},
+        ordered: true,
+        timeout: :infinity,
+        max_concurrency: System.schedulers_online()
+      )
+      |> Enum.map(fn {:ok, result} -> result end)
+
+    for {%{source: :hand} = p, claims} <- checked, Proof.fort_dies?(claims) do
+      raise "the starter puzzle #{p.id} fails the final check: the fort dies after the answer"
+    end
+
+    {dropped, kept} = Enum.split_with(checked, fn {_p, claims} -> Proof.fort_dies?(claims) end)
+    claims = Enum.flat_map(kept, &elem(&1, 1))
+
+    proof = %{
+      extra: Proof.extra(),
+      ms: ms,
+      claims: length(claims),
+      proven: Enum.count(claims, &(&1.result == :holds)),
+      late_catches:
+        for({p, cs} <- kept, c <- cs, c.result == false, do: "#{p.id} #{inspect(c.at)}"),
+      unproven: Enum.count(claims, &(&1.result == :unproven)),
+      dropped: Enum.map(dropped, fn {p, _} -> p.id end)
+    }
+
+    {Enum.map(kept, &elem(&1, 0)), proof}
+  end
+
+  @doc """
+  Makes the book of a puzzle: the result of each legal first move, and the
+  answer line. The search has no time limit here, so the book has the
+  results of the deep search.
+  """
+  @spec book(Puzzle.t()) :: map()
+  def book(%Puzzle{} = puzzle) do
+    puzzle = %{puzzle | book: nil}
+    start = Go.Play.new(puzzle)
+
+    first =
+      for point <- Go.Board.legal_moves(start.board, :blue), into: %{} do
+        {:ok, play} = Go.Play.tap(start, point, budget: :infinity)
+
+        entry =
+          case play do
+            %{status: :solved} -> %{kind: :solved, line: []}
+            %{outcome: :continue, pending: line} -> %{kind: :good, line: line}
+            %{outcome: {:failed, _}, pending: line} -> %{kind: :wrong, line: line}
+          end
+
+        {point, entry}
+      end
+
+    %{first: first, answer: Go.Play.answer_line(puzzle)}
   end
 
   defp world_index(world), do: Enum.find_index(Puzzle.worlds(), &(&1 == world))
 
   @doc "Writes a bank to a file, with one puzzle on each line."
   @spec write(map(), Path.t()) :: :ok
-  def write(%{puzzles: puzzles, stats: stats}, path) do
+  def write(%{puzzles: puzzles, stats: stats} = bank, path) do
     lines = fn list -> Enum.map_join(list, ",\n", &("    " <> JSON.encode!(&1))) end
     stats = Enum.map(stats, fn s -> Map.new(s, fn {k, v} -> {Atom.to_string(k), v} end) end)
+    proof = Map.new(bank[:proof] || %{}, fn {k, v} -> {Atom.to_string(k), v} end)
 
     body = """
     {
       "version": 1,
+      "proof": #{JSON.encode!(proof)},
       "yield": [
     #{lines.(stats)}
       ],

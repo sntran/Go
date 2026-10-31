@@ -14,6 +14,10 @@ config :go,
 # between the moves of "Watch again".
 config :go, red_delay: 700, watch_delay: 900
 
+# The time limit (in milliseconds) of a deep search during play. When the
+# time is over, a fast search in the move limit decides (see Go.Think).
+config :go, think_ms: 700
+
 # Configure the endpoint
 config :go, GoWeb.Endpoint,
   url: [host: "localhost"],

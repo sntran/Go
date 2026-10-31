@@ -11,14 +11,14 @@ defmodule Go.Goal do
       nothing, Red captures it in `moves` Red moves. The "moves left" count
       Red moves.
 
-  A move is good only if it is true in real Go, not only in the move
-  limit. In an escape puzzle, a blue move is good only if Red cannot
-  capture the fort in the moves that are left plus `deep/0` more moves.
-  In these deep checks, a fort with 5 liberties or more has escaped
-  (see `deep_opts/0`).
-  Thus the game never says "Your fort is safe!" when Red can still catch
-  the fort some moves later. `Go.Puzzles.Check` uses the same depth for
-  the tempting wrong moves of a capture puzzle.
+  A move must be good also after the move limit. In an escape puzzle, a
+  blue move is good only if Red cannot capture the fort in the moves that
+  are left plus `deep/0` more moves. In these deep checks, a fort with 5
+  liberties or more has escaped (see `deep_opts/0`). `Go.Puzzles.Check`
+  uses the same depth for the tempting wrong moves of a capture puzzle.
+
+  A fixed depth does not prove that a group lives. Thus the texts of the
+  game say "safe" or "got away" only when `Go.Life` proves it.
 
   The worlds that come later (connect and cut, eyes, ko, fields) add more
   types. Each type must give the functions of this module.
@@ -123,25 +123,32 @@ defmodule Go.Goal do
   @doc """
   Tells if a blue move keeps the goal reachable. The move must be legal.
   `left` is the count before the move.
+
+  With `deep: false`, it checks only the move limit, not the deep part. The
+  game uses this fast check when the deep check takes too long.
   """
-  @spec good_move?(t(), Board.t(), non_neg_integer(), Board.point()) :: boolean()
-  def good_move?(goal, board, left, point) do
+  @spec good_move?(t(), Board.t(), non_neg_integer(), Board.point(), keyword()) :: boolean()
+  def good_move?(goal, board, left, point, opts \\ []) do
     case Board.play(board, :blue, point) do
-      {:ok, next, _} -> good_after?(goal, next, after_blue(goal, left))
-      {:error, _} -> false
+      {:ok, next, _} ->
+        good_after?(goal, next, after_blue(goal, left), Keyword.get(opts, :deep, true))
+
+      {:error, _} ->
+        false
     end
   end
 
-  defp good_after?(%{type: :capture} = goal, next, left) do
+  defp good_after?(%{type: :capture} = goal, next, left, _deep?) do
     Solver.captured?(next, goal.target, :red) or
       (left > 0 and Solver.attacker_wins?(next, goal.target, :blue, :red, left))
   end
 
   # The fort must live in the move limit (a fast check), and also deeper.
-  defp good_after?(%{type: :escape} = goal, next, left) do
+  defp good_after?(%{type: :escape} = goal, next, left, deep?) do
     not Solver.captured?(next, goal.target, :blue) and
       not Solver.attacker_wins?(next, goal.target, :red, :red, left) and
-      not Solver.attacker_wins?(next, goal.target, :red, :red, left + @deep, deep_opts())
+      (not deep? or
+         not Solver.attacker_wins?(next, goal.target, :red, :red, left + @deep, deep_opts()))
   end
 
   @doc """
@@ -149,6 +156,7 @@ defmodule Go.Goal do
 
   With `max: k`, it stops when it has found k good moves. Then it tries the
   moves near the target first. A check for one correct move uses `max: 2`.
+  The option `deep` is as in `good_move?/5`.
   """
   @spec good_moves(t(), Board.t(), non_neg_integer(), keyword()) :: [Board.point()]
   def good_moves(goal, board, left, opts \\ []) do
@@ -156,35 +164,18 @@ defmodule Go.Goal do
 
     case Keyword.get(opts, :max) do
       nil ->
-        Enum.filter(moves, &good_move?(goal, board, left, &1))
+        Enum.filter(moves, &good_move?(goal, board, left, &1, opts))
 
       max ->
         moves
         |> Enum.sort_by(&distance(&1, goal.target))
-        |> Stream.filter(&good_move?(goal, board, left, &1))
+        |> Stream.filter(&good_move?(goal, board, left, &1, opts))
         |> Enum.take(max)
         |> Enum.sort()
     end
   end
 
   defp distance({r, c}, {tr, tc}), do: abs(r - tr) + abs(c - tc)
-
-  @doc """
-  Tells if the fight is settled for the target after a wrong blue move:
-  the attacker cannot capture it in the moves left plus `deep/0`. Use it
-  with the color that plays next.
-  """
-  @spec settled?(t(), Board.t(), non_neg_integer(), Board.color()) :: boolean()
-  def settled?(goal, board, left, to_move) do
-    not Solver.attacker_wins?(
-      board,
-      goal.target,
-      attacker(goal),
-      to_move,
-      left + @deep,
-      deep_opts()
-    )
-  end
 
   @doc """
   Gives the best red move. `left` is the count before the move.
@@ -250,15 +241,16 @@ defmodule Go.Goal do
 
   @doc """
   Gives the best blue move for the answer. `prefer` is a move to play if
-  it is good.
+  it is good. The option `deep` is as in `good_move?/5`.
   """
-  @spec blue_move(t(), Board.t(), non_neg_integer(), Board.point() | nil) :: Board.point() | nil
-  def blue_move(goal, board, left, prefer \\ nil) do
-    if prefer && good_move?(goal, board, left, prefer) do
+  @spec blue_move(t(), Board.t(), non_neg_integer(), Board.point() | nil, keyword()) ::
+          Board.point() | nil
+  def blue_move(goal, board, left, prefer \\ nil, opts \\ []) do
+    if prefer && good_move?(goal, board, left, prefer, opts) do
       prefer
     else
       goal
-      |> good_moves(board, left)
+      |> good_moves(board, left, Keyword.take(opts, [:deep]))
       |> Enum.map(&{&1, blue_score(goal, board, left, &1)})
       |> Enum.max_by(&elem(&1, 1), fn -> {nil, 0} end)
       |> elem(0)

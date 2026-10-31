@@ -225,6 +225,31 @@ defmodule Go.PuzzlesTest do
       end
     end
 
+    test "each puzzle has a book: the answer is its only first move that is not wrong" do
+      for p <- Puzzles.all() do
+        assert %{first: first, answer: [{:blue, answer} | _]} = p.book
+        assert answer == p.answer
+        not_wrong = for {point, %{kind: kind}} <- first, kind != :wrong, do: point
+        assert not_wrong == [p.answer], p.id
+        assert Map.keys(first) |> Enum.sort() == Go.Board.legal_moves(Puzzle.board(p), :blue)
+      end
+    end
+
+    test "a puzzle with its book survives the trip to JSON and back" do
+      for p <- Enum.take(Puzzles.all(), 10) do
+        assert p |> Puzzle.to_map() |> JSON.encode!() |> JSON.decode!() |> Puzzle.from_map() == p
+      end
+    end
+
+    test "a later tap with no time left decides with the fast search" do
+      p = Puzzles.get("capture-12")
+      {:ok, play} = Play.tap(Play.new(p), p.answer)
+      play = Play.run_red(play)
+      {us, {:ok, play}} = :timer.tc(fn -> Play.tap(play, {0, 0}, budget: 0) end)
+      assert play.status == :red_turn
+      assert us < 1_000_000
+    end
+
     test "the bank has no copies" do
       keys = Enum.map(Puzzles.all(), &Symmetry.key/1)
       assert length(Enum.uniq(keys)) == length(keys)

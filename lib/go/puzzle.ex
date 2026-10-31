@@ -22,6 +22,12 @@ defmodule Go.Puzzle do
       the red reply to show. A nil `what` means: make it from the line.
     * `grade`: the difficulty (see `Go.Puzzles.Grade`).
     * `hide_roads`: true when the road counts are hidden.
+    * `book`: the answers that the server knows already, from the time it
+      made the bank: for each legal first move, its kind (`:solved`,
+      `:good` or `:wrong`) and the moves that follow it (the red reply, or
+      Red's punishment), and the answer line. Thus a first tap needs no
+      search. nil when the puzzle has no book (the starter set in the
+      code).
   """
 
   alias Go.Board
@@ -45,7 +51,8 @@ defmodule Go.Puzzle do
     source: :hand,
     wrong: %{},
     grade: %{},
-    hide_roads: false
+    hide_roads: false,
+    book: nil
   ]
 
   @type t :: %__MODULE__{}
@@ -91,9 +98,54 @@ defmodule Go.Puzzle do
           }
         end),
       "grade" => Map.new(p.grade, fn {k, v} -> {Atom.to_string(k), v} end),
-      "hide_roads" => p.hide_roads
+      "hide_roads" => p.hide_roads,
+      "book" => book_to_map(p.book)
     }
   end
+
+  defp book_to_map(nil), do: nil
+
+  defp book_to_map(book) do
+    %{
+      "first" =>
+        book.first
+        |> Enum.sort()
+        |> Enum.map(fn {point, e} ->
+          %{"at" => pt(point), "kind" => Atom.to_string(e.kind), "line" => line_to_list(e.line)}
+        end),
+      "answer" => line_to_list(book.answer)
+    }
+  end
+
+  defp book_from_map(nil), do: nil
+
+  defp book_from_map(m) do
+    %{
+      first:
+        Map.new(m["first"], fn e ->
+          {point(e["at"]), %{kind: kind(e["kind"]), line: line_from_list(e["line"])}}
+        end),
+      answer: line_from_list(m["answer"])
+    }
+  end
+
+  defp line_to_list(line),
+    do: Enum.map(line, fn {color, move} -> [Atom.to_string(color), move_to(move)] end)
+
+  defp line_from_list(list),
+    do: Enum.map(list, fn [color, move] -> {color(color), move_from(move)} end)
+
+  defp move_to(:pass), do: "pass"
+  defp move_to(point), do: pt(point)
+  defp move_from("pass"), do: :pass
+  defp move_from(point), do: point(point)
+
+  defp color("blue"), do: :blue
+  defp color("red"), do: :red
+
+  defp kind("solved"), do: :solved
+  defp kind("good"), do: :good
+  defp kind("wrong"), do: :wrong
 
   @doc "Makes a puzzle from a map of `to_map/1`."
   @spec from_map(map()) :: t()
@@ -119,7 +171,8 @@ defmodule Go.Puzzle do
       win: m["win"],
       wrong: Map.new(m["wrong"] || [], &{point(&1["at"]), wrong(&1)}),
       grade: Map.new(m["grade"] || %{}, fn {k, v} -> {grade_key(k), v} end),
-      hide_roads: m["hide_roads"] || false
+      hide_roads: m["hide_roads"] || false,
+      book: book_from_map(m["book"])
     }
   end
 

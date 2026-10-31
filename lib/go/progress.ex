@@ -9,7 +9,7 @@ defmodule Go.Progress do
     * Each attempt has the puzzle id, the list of moves, the result and
       the stars.
     * Before the server counts a result, it plays the moves again with the
-      rules engine (see `Go.Play.replay/2`).
+      rules engine (see `Go.Play.verify/3`).
   """
 
   use GenServer
@@ -71,14 +71,9 @@ defmodule Go.Progress do
   defp verify(_puzzle, _play, :open), do: {:error, :open}
   defp verify(_puzzle, _play, :learned), do: :ok
 
-  defp verify(puzzle, play, result) do
-    blue = for {:blue, point} <- play.moves, do: point
-
-    case Play.replay(puzzle, blue) do
-      {:ok, %Play{status: ^result, moves: moves}} when moves == play.moves -> :ok
-      _ -> {:error, :replay}
-    end
-  end
+  # The rules engine plays the moves again: each move must be legal, and a
+  # solved result must reach the goal in the move limit.
+  defp verify(puzzle, play, result), do: Play.verify(puzzle, play.moves, result)
 
   defp update(results, id, :solved, stars, _today) do
     best =

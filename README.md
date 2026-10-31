@@ -81,9 +81,10 @@ mix go.gen.puzzles
 ```
 
 The task checks the hand-made starter set, makes puzzles from templates,
-checks each puzzle with the solver, and writes `priv/puzzles/bank.json`.
-It takes about 5 minutes on 4 cores. The same seed (`--seed`, 1 by default) gives
-the same file. Commit the file after you make it again.
+checks each puzzle with the solver, makes the book of each puzzle, runs
+the final check, and writes `priv/puzzles/bank.json`. It takes about 20
+minutes on 4 cores. The same seed (`--seed`, 1 by default) gives the same
+puzzles. Commit the file after you make it again.
 
 Each puzzle in the bank passes these checks:
 
@@ -94,20 +95,51 @@ Each puzzle in the bank passes these checks:
 - Each tempting wrong move of a capture puzzle (a move that touches the
   target, or that takes stones) really fails: Blue cannot capture Red in
   the move limit plus 6 moves.
-- In an escape puzzle, a move is correct only if the fort really lives:
-  Red cannot capture it in the move limit plus 6 moves. The game also uses
-  this check during play, so it shows "Your fort is safe!" only when the
-  fort is safe.
+- In an escape puzzle, a move is correct only if the fort lives also
+  after the move limit: Red cannot capture it in the move limit plus 6
+  moves. The game also uses this check during play.
 - It is not a copy of another puzzle, also after rotation or mirroring.
 
 In these deep checks, a group with 5 roads or more has escaped: the
 search stops there. Without this cut, the deep checks of open positions
 are too slow.
 
-The checks are true in real Go, not only in the move limit. On a small
-board, a group with few roads often dies some moves later. Thus the
-templates for the edge chase and the ladder also have red helper stones
-("friends") in the escape path, so that a wrong move really fails.
+On a small board, a group with few roads often dies some moves later.
+Thus the templates for the edge chase and the ladder also have red helper
+stones ("friends") in the escape path, so that a wrong move really fails.
+
+### The final check
+
+A fixed depth cannot prove that a group escaped. After the generator
+keeps a puzzle, the final check looks to the move limit plus 12 moves,
+with no 5-road rule (`Go.Puzzles.Proof`). Each claim has a time limit of
+20 s (`--proof-ms`). The claims:
+
+- Escape: the fort lives after the answer line. When the check proves
+  that the fort dies, the bank drops the puzzle (a hand-made puzzle must
+  be fixed).
+- Capture: each tempting wrong move fails. When the check proves that the
+  wrong move still catches Red later, the puzzle stays, as "mate in N" in
+  chess: the texts say only that Blue cannot catch Red in the moves that
+  are left. The task shows these "late catches".
+
+A claim that does not finish in time is "unproven", and the puzzle stays.
+With seed 1: 89 claims, 1 proven (escape-01), 0 proven false (no late
+catch, no dropped puzzle), and 88 unproven. A stronger proving search
+comes later, with the world "Two eyes".
+
+### What the texts say
+
+The texts say only what the server proves:
+
+- "Red got away" and "Your fort is safe!" need a proof that the group is
+  alive for good: Benson's algorithm (`Go.Life`). For example, escape-01:
+  the tower joins a big fort with two courtyards.
+- Else, after a wrong capture move, the title is "Red is still free", and
+  the text tells that Blue cannot catch Red in the moves that are left.
+  When an escape puzzle is solved, the title is "Your fort escaped the
+  attack!", and the text tells that Red cannot catch the fort in the moves
+  that it has.
 
 ### The yield
 
@@ -126,7 +158,7 @@ becomes an escape.
 | ladder             |        634 |       234 |   16 |    8 |
 | ladder_swapped     |        634 |       234 |   37 |    8 |
 | net                |       1005 |       503 |   88 |   10 |
-| escape_extend      |       1162 |       418 |  276 |    8 |
+| escape_extend      |       1162 |       419 |  277 |    8 |
 | escape_capture     |        595 |       508 |   50 |    8 |
 | escape_connect     |        603 |       531 |   18 |    8 |
 
@@ -159,6 +191,30 @@ attacker moves. It looks only at moves near the fight:
 It uses a sound cut: a target with L liberties needs at least L attacker
 moves. It keeps a cache of the positions that it already checked. The
 tests compare it with the reference solver, which tries all legal moves.
+
+### Speed
+
+A tap must be fast: a child does not wait. The bank has a book for each
+puzzle: the result of each legal first move, and the answer line. So a
+first tap, a hint at the start and "Show the answer" need no search. A
+later tap shows the blue stone and "Red is thinking…" at once, and the
+search runs in a task with a time limit of 700 ms (`:think_ms`). When the
+time is over, a fast search in the move limit decides.
+
+`test/go/speed_test.exs` checks that each server action takes less than
+1 s, for each puzzle of the bank.
+
+I measured the taps on the WebAssembly runtime of BEAM.com 0.1.0-rc.6:
+`app.com` of a release (`RELEASE_ERTS=false mix release`), in `workerd`
+on my computer (`wrangler dev`), with a browser at phone width. 231 taps
+in 136 tap sequences (the answer lines, a wrong first move and a wrong
+second move of each puzzle with 2 moves or more):
+
+- From the tap to the blue stone: 98 ms at most.
+- From the tap to the first move of Red, less the planned pause of 700 ms
+  before Red moves: 769 ms at most. The slowest are the later taps where
+  the time limit of 700 ms ran out. For the 136 first taps (from the
+  book), it is 85 ms at most.
 
 ### Stars
 

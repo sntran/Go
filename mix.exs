@@ -11,7 +11,10 @@ defmodule Go.MixProject do
       aliases: aliases(),
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      # RELEASE_ERTS=false: a release with no ERTS, for beam.com on
+      # Cloudflare Workers (as examples/phoenix_demo of BEAM.com).
+      releases: [go: [include_erts: System.get_env("RELEASE_ERTS") != "false"]]
     ]
   end
 

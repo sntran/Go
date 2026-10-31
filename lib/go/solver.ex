@@ -42,7 +42,9 @@ defmodule Go.Solver do
   defender only passes: this tells if the target is in danger when the
   defender does nothing. With `settled: k`, a target with k liberties or
   more has escaped: the search stops there. This is not exact, so only the
-  deep checks use it (see `Go.Goal.deep/0`).
+  deep checks use it (see `Go.Goal.deep/0`). With `life: true`, a target
+  that is alive by Benson's algorithm (see `Go.Life`) has escaped. This is
+  exact, but slow, so only the final check of the bank uses it.
   """
   @spec attacker_wins?(
           Board.t(),
@@ -145,7 +147,8 @@ defmodule Go.Solver do
       attacker: attacker,
       defender: Board.other(attacker),
       passes_only: Keyword.get(opts, :passes_only, false),
-      settled: Keyword.get(opts, :settled)
+      settled: Keyword.get(opts, :settled),
+      life: Keyword.get(opts, :life, false)
     }
   end
 
@@ -170,6 +173,8 @@ defmodule Go.Solver do
         cond do
           n == 0 or libs > n -> {false, cache}
           fight.settled != nil and libs >= fight.settled -> {false, cache}
+          # An alive group has 2 liberties or more.
+          fight.life and libs >= 2 and Go.Life.alive?(board, fight.target) -> {false, cache}
           to_move == fight.attacker -> attack(board, fight, group, n, cache)
           true -> defend(board, fight, group, n, cache)
         end

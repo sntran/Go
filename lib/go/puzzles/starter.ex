@@ -356,20 +356,20 @@ defmodule Go.Puzzles.Starter do
         id: "escape-01",
         type: :escape,
         moves: 1,
-        template: "escape_extend",
+        template: "escape_connect",
         rows: [
+          ". B . B .",
+          "B B B B .",
           ". . . . .",
-          ". . R . .",
-          ". R b . .",
-          ". . R . .",
-          ". . . . ."
+          "R b R . .",
+          ". R . . ."
         ],
-        answer: {2, 3},
-        title: "Run out!",
+        answer: {2, 1},
+        title: "Run home!",
         say:
-          "Your tower has only 1 open road, so it shakes. Red wants to close it. Build on the open road, and your fort gets new roads.",
-        hint: "Find the dashed ring next to your tower.",
-        better: "Build on your last open road, to the right. There your fort gets 3 new roads."
+          "Your tower with the flag has only 1 open road, so it shakes. Above it stands your big fort with two courtyards. Red can never take that fort. Build on the open road to join it.",
+        hint: "Find the dashed ring next to the tower with the flag.",
+        better: "Build above your tower. Then it joins your big fort, and it is safe for good."
       },
       %{
         id: "escape-02",
@@ -608,7 +608,7 @@ defmodule Go.Puzzles.Starter do
         answer: {1, 3},
         title: "Run to the middle",
         say:
-          "Your tower stands on the edge, and Red comes near. Run where your fort gets the most roads.",
+          "Your tower with the flag stands on the edge, and Red comes near. Save that tower: run where it gets the most roads.",
         hint: "Count the roads for each spot. The edge and the corner give few roads.",
         better:
           "Build to the left of your tower, toward the middle. There your fort gets the most roads.",

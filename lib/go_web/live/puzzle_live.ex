@@ -74,9 +74,19 @@ defmodule GoWeb.PuzzleLive do
   def handle_event("tap", %{"r" => r, "c" => c}, %{assigns: %{play: %Play{}}} = socket) do
     point = {String.to_integer(r), String.to_integer(c)}
 
-    case Play.tap(socket.assigns.play, point) do
-      {:ok, play} -> {:noreply, socket |> put_play(play) |> after_move()}
-      {:error, _reason, play} -> {:noreply, assign(socket, play: play)}
+    case Play.place(socket.assigns.play, point) do
+      {:ok, placed} ->
+        if Play.quick?(placed) or socket.assigns.red_delay == 0 do
+          {:noreply, socket |> put_play(Play.think(placed)) |> after_move()}
+        else
+          # Show the blue stone and "Red is thinking…" first. The search
+          # runs in a task, with a time limit.
+          {:noreply,
+           socket |> put_play(placed) |> start_async(:think, fn -> Play.think(placed) end)}
+        end
+
+      {:error, _reason, play} ->
+        {:noreply, assign(socket, play: play)}
     end
   end
 
@@ -134,7 +144,26 @@ defmodule GoWeb.PuzzleLive do
 
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
-  ## Timers
+  ## The search and the timers
+
+  @impl true
+  def handle_async(
+        :think,
+        result,
+        %{assigns: %{play: %Play{status: :thinking} = current}} = socket
+      ) do
+    play =
+      case result do
+        {:ok, %Play{puzzle: %{id: id}} = play} when id == current.puzzle.id -> play
+        # The task stopped: decide with the fast search in the move limit.
+        _ -> Play.think(current, budget: 0)
+      end
+
+    {:noreply, socket |> put_play(play) |> after_move()}
+  end
+
+  # A result for a play that is gone.
+  def handle_async(:think, _result, socket), do: {:noreply, socket}
 
   @impl true
   def handle_info({:red_step, ref}, %{assigns: %{timer: ref}} = socket) do

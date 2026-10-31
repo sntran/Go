@@ -198,7 +198,8 @@ defmodule Go.Puzzles.Templates do
         "Red wants to run to its friends. Throw a net: you do not need to touch Red to catch it.",
       hint: "Do not touch Red. Close the way out with one tower.",
       better: "Build corner to corner from Red. That closes both ways out, like a net.",
-      trap_why: "Your move touched Red, but Red could run away to its friend on the other side.",
+      trap_why:
+        "Your move touched Red, but it left Red a road toward its friend on the other side.",
       bases: fn ->
         # Shifts and helper stones make the other places on the board.
         for size <- [7, 9], r = div(size, 2) - 1, c = r, fr <- [2, 3], fc <- [2, 3] do

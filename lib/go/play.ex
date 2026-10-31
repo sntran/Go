@@ -3,13 +3,20 @@ defmodule Go.Play do
   One player on one puzzle: the board, the moves, the help that the
   player used, and the result.
 
-  This module has no processes and no timers. The caller (the LiveView)
-  shows each step and calls `red_step/1` and `watch_step/1` again after a
-  short time. Thus the player sees Blue's move first, and then Red's reply.
+  The caller (the LiveView) shows each step and calls `red_step/1` and
+  `watch_step/1` again after a short time. Thus the player sees Blue's
+  move first, and then Red's reply.
+
+  A tap must be fast. For a first move, the answer is in the book of the
+  puzzle (see `Go.Puzzle`). For a later move, the deep search runs with a
+  time limit (`Go.Think.budget/0`). When the time is over, a fast search
+  in the move limit decides.
 
   The statuses:
 
     * `:playing`: Blue can tap.
+    * `:thinking`: the blue stone stands, and the server looks for Red's
+      reply (`think/2`). Taps are ignored.
     * `:red_turn`: Red plays the moves in `pending`. Taps are ignored.
     * `:solved`: the goal is reached.
     * `:failed`: the goal cannot be reached in the moves that are left.
@@ -40,7 +47,9 @@ defmodule Go.Play do
     show_better: false,
     falls: [],
     marks: %{},
-    replay: nil
+    replay: nil,
+    thinking: nil,
+    hint_list: []
   ]
 
   @type t :: %__MODULE__{}
@@ -64,7 +73,7 @@ defmodule Go.Play do
 
   @doc "True while the player must wait (Red plays, or a replay runs)."
   @spec busy?(t()) :: boolean()
-  def busy?(%__MODULE__{status: :red_turn}), do: true
+  def busy?(%__MODULE__{status: status}) when status in [:red_turn, :thinking], do: true
   def busy?(%__MODULE__{replay: replay}), do: replay != nil
 
   @doc "True when the puzzle is over (solved, failed or learned)."
@@ -77,11 +86,23 @@ defmodule Go.Play do
   def shown_board(%__MODULE__{board: board}), do: board
 
   @doc """
-  The player taps a point. Gives `{:ok, play}` or `{:error, reason, play}`.
-  On an error, the message tells the player what to do.
+  The player taps a point: `place/2`, then `think/2`. Gives `{:ok, play}` or
+  `{:error, reason, play}`. On an error, the message tells the player what
+  to do. The option `budget` is the time limit of the deep search
+  (`Go.Think.budget/0` by default).
   """
-  @spec tap(t(), Board.point()) :: {:ok, t()} | {:error, atom(), t()}
-  def tap(%__MODULE__{} = play, point) do
+  @spec tap(t(), Board.point(), keyword()) :: {:ok, t()} | {:error, atom(), t()}
+  def tap(%__MODULE__{} = play, point, opts \\ []) do
+    with {:ok, play} <- place(play, point), do: {:ok, think(play, opts)}
+  end
+
+  @doc """
+  Places the blue stone. The play then has the status `:thinking`, and
+  `think/2` finds the result. Gives `{:ok, play}` or
+  `{:error, reason, play}`.
+  """
+  @spec place(t(), Board.point()) :: {:ok, t()} | {:error, atom(), t()}
+  def place(%__MODULE__{} = play, point) do
     cond do
       busy?(play) ->
         {:error, :busy, %{play | message: "Wait. Red is thinking."}}
@@ -91,11 +112,16 @@ defmodule Go.Play do
 
       true ->
         case Board.play(play.board, :blue, point) do
-          {:ok, next, captured} -> {:ok, blue_moved(play, point, next, captured)}
+          {:ok, next, captured} -> {:ok, placed(play, point, next, captured)}
           {:error, reason} -> {:error, reason, %{play | message: illegal_message(reason)}}
         end
     end
   end
+
+  @doc "True when `think/2` needs no search: the book has the answer."
+  @spec quick?(t()) :: boolean()
+  def quick?(%__MODULE__{thinking: %{start?: true}, puzzle: %Puzzle{book: %{}}}), do: true
+  def quick?(_play), do: false
 
   defp over_message(%{status: :solved}),
     do: "You solved this puzzle! Tap Next puzzle, or Try again."
@@ -116,74 +142,132 @@ defmodule Go.Play do
 
   defp illegal_message(:off_board), do: "Tap a spot on the board."
 
-  defp blue_moved(play, point, next, captured) do
+  defp placed(play, point, next, captured) do
     goal = play.puzzle.goal
     before = play.board
-    left = Goal.after_blue(goal, play.left)
     snapshot = Map.take(play, [:board, :left, :moves, :message])
-
-    play = %{
-      play
-      | board: next,
-        left: left,
-        moves: play.moves ++ [{:blue, point}],
-        history: [snapshot | play.history],
-        feedback: nil,
-        hint_on: false,
-        show_better: false,
-        falls: Enum.map(captured, &{&1, :red}),
-        marks: %{point => :blue},
-        last_turn: %{board: before, steps: [{:blue, point}]}
-    }
-
-    good = Goal.good_move?(goal, before, snapshot.left, point)
-
-    cond do
-      good and Goal.reached_after_good?(goal, next, left) ->
-        solved(play, captured)
-
-      good ->
-        red = Goal.red_move(goal, next, left)
-
-        %{
-          play
-          | status: :red_turn,
-            pending: [{:red, red}],
-            outcome: :continue,
-            message: "Red is thinking…"
-        }
-
-      true ->
-        punish(play, goal, before, point, snapshot.left, snapshot.moves == [])
-    end
-  end
-
-  defp punish(play, goal, before, point, left_before, start?) do
-    hand = if start?, do: Map.get(play.puzzle.wrong, point), else: nil
-    reply = if hand, do: Map.get(hand, :reply)
-    line = punish_line(goal, play.board, play.left, reply)
-    better = Goal.blue_move(goal, before, left_before, if(start?, do: play.puzzle.answer))
-    later = caught_later?(goal, Explain.replay(play.board, line), play.left)
-
-    feedback =
-      Explain.wrong(play.puzzle, before, point, line, left_before, better, start?,
-        caught_later: later
-      )
-
-    steps = Enum.map(line, fn {color, move, _} -> {color, move} end)
 
     %{
       play
-      | status: :red_turn,
-        pending: steps,
-        outcome: {:failed, feedback},
-        message: "Red is thinking…"
+      | board: next,
+        left: Goal.after_blue(goal, play.left),
+        moves: play.moves ++ [{:blue, point}],
+        history: [snapshot | play.history],
+        status: :thinking,
+        feedback: nil,
+        hint_on: false,
+        hint_list: [],
+        show_better: false,
+        falls: Enum.map(captured, &{&1, :red}),
+        marks: %{point => :blue},
+        last_turn: %{board: before, steps: [{:blue, point}]},
+        message: "Red is thinking…",
+        thinking: %{
+          point: point,
+          before: before,
+          captured: captured,
+          left_before: snapshot.left,
+          start?: snapshot.moves == []
+        }
     }
+  end
+
+  @doc """
+  Finds the result of the blue move that `place/2` placed: the goal is
+  reached, or Red replies, or Red punishes a wrong move.
+  """
+  @spec think(t(), keyword()) :: t()
+  def think(play, opts \\ [])
+
+  def think(%__MODULE__{status: :thinking, thinking: t} = play, opts) do
+    decision =
+      case book_entry(play) do
+        nil -> search(play, Keyword.get(opts, :budget, Go.Think.budget()))
+        entry -> entry
+      end
+
+    play = %{play | thinking: nil}
+
+    case decision do
+      :solved ->
+        solved(play, t.captured)
+
+      {:good, steps} ->
+        %{play | status: :red_turn, pending: steps, outcome: :continue}
+
+      {:wrong, steps, better} ->
+        line = with_captures(play.board, steps)
+
+        feedback =
+          Explain.wrong(play.puzzle, t.before, t.point, line, t.left_before, better, t.start?)
+
+        %{play | status: :red_turn, pending: steps, outcome: {:failed, feedback}}
+    end
+  end
+
+  def think(play, _opts), do: play
+
+  defp book_entry(%{
+         thinking: %{start?: true, point: point},
+         puzzle: %Puzzle{book: %{} = book} = p
+       }) do
+    case Map.get(book.first, point) do
+      %{kind: :solved} -> :solved
+      %{kind: :good, line: line} -> {:good, line}
+      %{kind: :wrong, line: line} -> {:wrong, line, p.answer}
+      nil -> nil
+    end
+  end
+
+  defp book_entry(_play), do: nil
+
+  # The deep search, with a time limit. When the time is over, the search
+  # in the move limit decides (it is fast).
+  defp search(play, budget) do
+    case Go.Think.within(budget, fn -> decide(play, true) end) do
+      {:ok, decision} -> decision
+      :timeout -> decide(play, false)
+    end
+  end
+
+  @doc false
+  # The result of the blue move of `play.thinking`. With `deep?` false, it
+  # looks only to the move limit.
+  def decide(%{puzzle: puzzle, thinking: t} = play, deep?) do
+    goal = puzzle.goal
+    good = Goal.good_move?(goal, t.before, t.left_before, t.point, deep: deep?)
+
+    cond do
+      good and Goal.reached_after_good?(goal, play.board, play.left) ->
+        :solved
+
+      good ->
+        {:good, [{:red, Goal.red_move(goal, play.board, play.left)}]}
+
+      true ->
+        hand = if t.start?, do: Map.get(puzzle.wrong, t.point)
+        reply = if hand, do: Map.get(hand, :reply)
+        line = punish_line(goal, play.board, play.left, reply, deep?)
+        prefer = if t.start?, do: puzzle.answer
+        better = Goal.blue_move(goal, t.before, t.left_before, prefer, deep: deep?)
+        {:wrong, Enum.map(line, fn {color, move, _} -> {color, move} end), better}
+    end
+  end
+
+  # Adds the captured stones to each move of a line.
+  defp with_captures(board, steps) do
+    {line, _} =
+      Enum.map_reduce(steps, board, fn {color, move}, b ->
+        {:ok, b, captured} = Board.play(b, color, move)
+        {{color, move, captured}, b}
+      end)
+
+    line
   end
 
   # Red's punishment. In an escape puzzle, play it out until the fort falls.
   # `reply` is a hand-written red reply. It is used only if it punishes.
-  defp punish_line(%{type: :capture} = goal, board, left, reply) do
+  defp punish_line(%{type: :capture} = goal, board, left, reply, _deep?) do
     move =
       if punishes?(goal, board, left, reply), do: reply, else: Goal.red_move(goal, board, left)
 
@@ -193,19 +277,11 @@ defmodule Go.Play do
 
   # In an escape puzzle, Red can need more moves than the limit: a wrong
   # move is wrong if the fort dies in the moves left plus Goal.deep().
-  defp punish_line(%{type: :escape} = goal, board, left, reply) do
+  defp punish_line(%{type: :escape} = goal, board, left, reply, deep?) do
+    horizon = if deep?, do: left + Goal.deep(), else: left
     first = if punishes?(goal, board, left, reply), do: reply
-    escape_line(goal, board, left + Goal.deep(), first, [], 12)
+    escape_line(goal, board, horizon, first, [], 12)
   end
-
-  # In a capture puzzle: Blue can still catch Red later, but not in the
-  # moves that are left.
-  defp caught_later?(%{type: :capture} = goal, board, left),
-    do:
-      not Go.Solver.captured?(board, goal.target, :red) and
-        not Goal.settled?(goal, board, left, :blue)
-
-  defp caught_later?(_goal, _board, _left), do: false
 
   @doc false
   def punishes?(_goal, _board, _left, nil), do: false
@@ -238,6 +314,8 @@ defmodule Go.Play do
   defp escape_line(_goal, _board, _left, _first, acc, 0), do: Enum.reverse(acc)
 
   # `left` is the horizon: the red moves that are left for the capture.
+  defp escape_line(_goal, _board, 0, _first, acc, _budget), do: Enum.reverse(acc)
+
   defp escape_line(goal, board, left, first, acc, budget) do
     red = first || Goal.red_move(goal, board, left)
     {:ok, board, captured} = Board.play(board, :red, red)
@@ -343,10 +421,12 @@ defmodule Go.Play do
     text = Explain.win(play.puzzle, play.board, captured, play.left)
     stars = stars(play)
 
+    # "Safe" needs a proof that the fort is alive for good (see Go.Life).
     title =
-      case play.puzzle.goal.type do
-        :capture -> "You caught Red!"
-        :escape -> "Your fort is safe!"
+      cond do
+        play.puzzle.goal.type == :capture -> "You caught Red!"
+        Go.Life.alive?(play.board, play.puzzle.goal.target) -> "Your fort is safe!"
+        true -> "Your fort escaped the attack!"
       end
 
     %{
@@ -440,12 +520,15 @@ defmodule Go.Play do
   end
 
   @doc "Shows a hint: some glowing spots and a text. It counts as help."
-  @spec hint(t()) :: t()
-  def hint(%__MODULE__{status: :playing, hint_on: false} = play) do
-    %{play | hint_on: true, hints: play.hints + 1, message: hint_text(play)}
+  @spec hint(t(), keyword()) :: t()
+  def hint(play, opts \\ [])
+
+  def hint(%__MODULE__{status: :playing, hint_on: false} = play, opts) do
+    spots = find_hint_spots(play, Keyword.get(opts, :budget, Go.Think.budget()))
+    %{play | hint_on: true, hint_list: spots, hints: play.hints + 1, message: hint_text(play)}
   end
 
-  def hint(play), do: play
+  def hint(play, _opts), do: play
 
   defp hint_text(%{puzzle: puzzle, history: []}) when is_binary(puzzle.hint), do: puzzle.hint
 
@@ -458,10 +541,24 @@ defmodule Go.Play do
   @doc "The glowing spots of the hint. The correct move is one of them."
   @spec hint_spots(t()) :: [Board.point()]
   def hint_spots(%__MODULE__{hint_on: false}), do: []
+  def hint_spots(%__MODULE__{hint_list: spots}), do: spots
 
-  def hint_spots(%__MODULE__{} = play) do
+  # At the start, the answer is the only good move. Later, the deep search
+  # runs with a time limit, and else the search in the move limit.
+  defp find_hint_spots(play, budget) do
     goal = play.puzzle.goal
-    good = Goal.good_moves(goal, play.board, play.left)
+
+    good =
+      cond do
+        play.moves == [] and play.puzzle.answer != nil ->
+          [play.puzzle.answer]
+
+        true ->
+          case Go.Think.within(budget, fn -> Goal.good_moves(goal, play.board, play.left) end) do
+            {:ok, good} -> good
+            :timeout -> Goal.good_moves(goal, play.board, play.left, deep: false)
+          end
+      end
 
     roads =
       case Board.group(play.board, goal.target) do
@@ -518,8 +615,13 @@ defmodule Go.Play do
     end
   end
 
-  @doc "The answer line from the start: the moves of Blue and Red."
+  @doc """
+  The answer line from the start: the moves of Blue and Red. The book has
+  it, when the puzzle has a book.
+  """
   @spec answer_line(Puzzle.t()) :: [{Board.color(), Board.point() | :pass}]
+  def answer_line(%Puzzle{book: %{answer: line}}), do: line
+
   def answer_line(%Puzzle{} = puzzle) do
     answer_line(puzzle.goal, Puzzle.board(puzzle), puzzle.goal.moves, puzzle.answer, [], 20)
   end
@@ -607,18 +709,68 @@ defmodule Go.Play do
 
   @doc """
   Plays a list of blue moves from the start, with the server's red
-  replies. The server uses it to check a result before it counts it.
-  Gives the play at the end, or `{:error, reason}` for an illegal move.
+  replies, with no time limit. Gives the play at the end, or
+  `{:error, reason}` for an illegal move.
   """
   @spec replay(Puzzle.t(), [Board.point()]) :: {:ok, t()} | {:error, atom()}
   def replay(%Puzzle{} = puzzle, blue_moves) do
     Enum.reduce_while(blue_moves, {:ok, new(puzzle)}, fn point, {:ok, play} ->
-      case tap(play, point) do
+      case tap(play, point, budget: :infinity) do
         {:ok, play} -> {:cont, {:ok, run_red(play)}}
         {:error, reason, _} -> {:halt, {:error, reason}}
       end
     end)
   end
+
+  @doc """
+  Checks a list of moves with the rules engine, before the server counts
+  a result. Each move must be legal, Blue and Red must take turns, and a
+  `:solved` result must reach the goal in the move limit. Gives `:ok` or
+  `{:error, reason}`.
+  """
+  @spec verify(Puzzle.t(), [{Board.color(), Board.point() | :pass}], atom()) ::
+          :ok | {:error, atom()}
+  def verify(%Puzzle{goal: goal} = puzzle, moves, result) do
+    colors = Enum.map(moves, &elem(&1, 0))
+    turns = Enum.take(Stream.cycle([:blue, :red]), length(moves))
+
+    replayed =
+      Enum.reduce_while(moves, {:ok, Puzzle.board(puzzle), goal.moves}, fn {color, move},
+                                                                           {:ok, b, left} ->
+        case Board.play(b, color, move) do
+          {:ok, b, _} ->
+            left =
+              if color == :blue, do: Goal.after_blue(goal, left), else: Goal.after_red(goal, left)
+
+            {:cont, {:ok, b, left}}
+
+          {:error, reason} ->
+            {:halt, {:error, reason}}
+        end
+      end)
+
+    case replayed do
+      {:error, reason} ->
+        {:error, reason}
+
+      {:ok, _b, _left} when colors != turns ->
+        {:error, :turns}
+
+      {:ok, b, left} when result == :solved ->
+        if solved_in_limit?(goal, moves, b, left), do: :ok, else: {:error, :not_solved}
+
+      {:ok, _b, _left} ->
+        :ok
+    end
+  end
+
+  defp solved_in_limit?(%{type: :capture} = goal, moves, board, _left),
+    do:
+      Go.Solver.captured?(board, goal.target, :red) and
+        Enum.count(moves, &match?({:blue, _}, &1)) <= goal.moves
+
+  defp solved_in_limit?(%{type: :escape} = goal, _moves, board, left),
+    do: Goal.reached_after_good?(goal, board, left)
 
   @doc "Plays all pending moves at once."
   @spec run_red(t()) :: t()

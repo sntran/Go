@@ -9,7 +9,7 @@ defmodule Go.Explain do
   its friend", "escaped with N roads".
   """
 
-  alias Go.{Board, Puzzle, Solver}
+  alias Go.{Board, Life, Puzzle, Solver}
 
   @type feedback :: %{
           tone: :good | :bad,
@@ -32,9 +32,10 @@ defmodule Go.Explain do
     * `start?`: true if `before` is the start of the puzzle. Then the
       hand-written texts of the puzzle apply.
 
-  The option `caught_later: true` tells that Blue can still capture Red
-  later, but not in the moves that are left. Then the texts do not say
-  that Red got away.
+  The texts tell only what the checks prove. In a capture puzzle, the
+  title is "Red got away" only when Red is alive for good (see
+  `Go.Life`). Else it is "Red is still free": Blue cannot capture Red in
+  the moves that are left.
   """
   @spec wrong(
           Puzzle.t(),
@@ -43,11 +44,10 @@ defmodule Go.Explain do
           list(),
           non_neg_integer(),
           Board.point() | nil,
-          boolean(),
-          keyword()
+          boolean()
         ) ::
           feedback()
-  def wrong(puzzle, before, move, line, left, better, start?, opts \\ []) do
+  def wrong(puzzle, before, move, line, left, better, start?) do
     goal = puzzle.goal
     {:ok, after_blue, _} = Board.play(before, :blue, move)
     final = replay(after_blue, line)
@@ -57,8 +57,7 @@ defmodule Go.Explain do
     made =
       case goal.type do
         :capture ->
-          later = Keyword.get(opts, :caught_later, false)
-          capture_texts(goal, before, move, after_blue, line, final, left, better, later)
+          capture_texts(goal, before, move, after_blue, line, final, left, better)
 
         :escape ->
           escape_texts(goal, before, move, after_blue, line, final, better)
@@ -84,7 +83,7 @@ defmodule Go.Explain do
 
   ## Capture: Blue attacks, Red escapes.
 
-  defp capture_texts(goal, before, move, after_blue, line, final, left, better, later) do
+  defp capture_texts(goal, before, move, after_blue, line, final, left, better) do
     target = goal.target
     roads_before = Board.liberty_count(before, target)
     roads_after = Board.liberty_count(final, target)
@@ -142,26 +141,22 @@ defmodule Go.Explain do
           "Your move was far from the fight. It closed no road of Red, so Red got a free move."
       end
 
+    # Only what the checks prove: Blue cannot capture Red in the moves that
+    # are left. "Red got away" needs a proof that Red is alive.
     second =
       cond do
-        later and blue_left == 0 ->
-          " You have no moves left. You could catch Red later, but not in time."
-
-        later ->
-          " You can still catch Red later, but not in #{moves(blue_left)}."
-
         blue_left == 0 ->
-          " You have no moves left."
+          " You have no moves left, so you cannot catch Red now."
 
         roads_after > blue_left ->
           " You have #{moves(blue_left)} left. That is not enough to close #{roads(roads_after)}."
 
         true ->
-          " Red can now run away from each of your moves."
+          " You cannot catch Red in your moves now."
       end
 
     %{
-      title: if(later, do: "Not fast enough", else: "Red got away"),
+      title: if(Life.alive?(final, target), do: "Red got away", else: "Red is still free"),
       what: what,
       why: first <> second,
       better: better_capture(before, target, better)
@@ -299,10 +294,12 @@ defmodule Go.Explain do
   def win(%Puzzle{goal: %{type: :escape} = goal}, board, _captured, left) do
     n = Board.liberty_count(board, goal.target)
 
+    # "Safe" needs a proof that the fort is alive (see Go.Life).
+    safe = if Life.alive?(board, goal.target), do: " It is alive for good: it is safe.", else: ""
+
     if left == 0,
-      do: "Red has no moves left, and your fort still stands with #{roads(n)}. It is safe.",
-      else:
-        "Your fort has #{roads(n)}. It is safe now: Red cannot catch it, not even with more moves."
+      do: "Red has no moves left, and your fort still stands with #{roads(n)}.#{safe}",
+      else: "Your fort has #{roads(n)}. Red cannot catch it in the moves that it has.#{safe}"
   end
 
   ## Helpers.

@@ -81,7 +81,7 @@ defmodule GoWeb.PuzzleLiveTest do
       {view, html} = open(conn, "escape-08")
       assert text(html, "#moves-left") == "Red moves left: 2"
       html = tap_point(view, {2, 1})
-      assert text(html, "#fb-title") == "Your fort is safe!"
+      assert text(html, "#fb-title") == "Your fort escaped the attack!"
     end
   end
 
@@ -91,7 +91,7 @@ defmodule GoWeb.PuzzleLiveTest do
       html = tap_point(view, {0, 4})
 
       assert stone(html, {0, 2}) == :red
-      assert text(html, "#fb-title") == "Red got away"
+      assert text(html, "#fb-title") == "Red is still free"
 
       assert text(html, "#fb-what") ==
                "What happened: Red ran to the left, toward its friend. Now it has 2 roads."
@@ -368,7 +368,12 @@ defmodule GoWeb.PuzzleLiveTest do
             html
           end)
 
-        assert text(html, "#fb-title") in ["You caught Red!", "Your fort is safe!"]
+        assert text(html, "#fb-title") in [
+                 "You caught Red!",
+                 "Your fort is safe!",
+                 "Your fort escaped the attack!"
+               ]
+
         assert_next_step(html)
 
         for {point, _text} <- @p.wrong do

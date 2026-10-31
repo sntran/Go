@@ -24,3 +24,7 @@ config :phoenix,
 # Red plays at once in the tests. A test can set a delay to check the
 # screen while Red plays.
 config :go, red_delay: 0, watch_delay: 0
+
+# The tests wait for each deep search, so that the results are always the
+# same. A test that needs the time limit sets it.
+config :go, think_ms: :infinity
