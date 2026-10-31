@@ -31,6 +31,17 @@ defmodule Go.SolverTest do
       assert Board.liberty_count(board, {0, 3}) == 2
       refute Solver.attacker_wins?(board, {0, 3}, :blue, :blue, 1)
     end
+
+    test "after the wrong move (0,4), Red survives also 6 moves deeper", %{board: board} do
+      {:ok, board, []} = Board.play(board, :blue, {0, 4})
+      refute Solver.attacker_wins?(board, {0, 3}, :blue, :red, 1 + Goal.deep())
+    end
+
+    test "with no red helper, the wrong move (0,4) still catches Red later" do
+      # This was the first version of the fixture (issue 2).
+      board = Board.new(5, [{1, 3}, {0, 4}], [{0, 3}])
+      assert Solver.attacker_wins?(board, {0, 3}, :blue, :red, 1 + Goal.deep())
+    end
   end
 
   describe "net fixture" do

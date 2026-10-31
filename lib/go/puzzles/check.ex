@@ -1,15 +1,20 @@
 defmodule Go.Puzzles.Check do
   @moduledoc """
-  The checks that each puzzle of the bank must pass.
+  The checks that each puzzle of the bank must pass. They are true in real
+  Go, not only in the move limit:
 
     * It has exactly one correct first move.
-    * It cannot be solved in fewer moves.
-    * Each tempting wrong move really fails, also deeper than the move
-      limit. A tempting move touches the target group or takes stones.
-    * In an escape puzzle, the fort lives also deeper than the move limit
-      after the correct first move.
+    * It cannot be solved in fewer moves. For an escape puzzle: if Blue
+      does nothing, Red needs all its moves to capture the fort.
+    * Each tempting wrong move of a capture puzzle really fails: Blue
+      cannot capture Red in the move limit plus `Go.Goal.deep/0` moves.
+      A tempting move touches the target group or takes stones.
+    * In an escape puzzle, the fort lives also after the move limit: a
+      blue move is correct only if Red cannot capture the fort in the move
+      limit plus `Go.Goal.deep/0` moves (see `Go.Goal`).
 
-  The duplicate check is in `Go.Puzzles.Symmetry`.
+  The fast checks run first. The deep checks run only when the fast
+  checks pass. The duplicate check is in `Go.Puzzles.Symmetry`.
   """
 
   alias Go.{Board, Goal, Puzzle, Solver}
@@ -23,37 +28,49 @@ defmodule Go.Puzzles.Check do
         }
 
   @doc """
-  Checks a puzzle. `deep` is the number of extra moves for the deeper
-  checks (2 by default).
+  Checks a puzzle. `deep` is the number of extra moves for the deep checks
+  (`Go.Goal.deep/0` by default).
   """
   @spec run(Puzzle.t(), keyword()) :: report()
   def run(%Puzzle{} = puzzle, opts \\ []) do
-    deep = Keyword.get(opts, :deep, 2)
+    deep = Keyword.get(opts, :deep, Goal.deep())
     goal = puzzle.goal
     board = Puzzle.board(puzzle)
     n = goal.moves
-    good = Goal.good_moves(goal, board, n)
-    answer = puzzle.answer || List.first(good)
-    traps = traps(goal, board, good)
 
     errors =
-      []
-      |> add(
+      add(
+        [],
         Board.get(board, goal.target) != Goal.defender(goal),
         "the target is not a #{Goal.defender(goal)} stone"
       )
+
+    good = if errors == [], do: Goal.good_moves(goal, board, n), else: []
+    answer = puzzle.answer || List.first(good)
+    traps = if errors == [], do: traps(goal, board, good), else: []
+
+    errors =
+      errors
       |> add(
         good != [answer],
         "the correct first moves are #{inspect(good)}, not exactly [#{inspect(answer)}]"
       )
-      |> add(not needs_all_moves?(goal, board, n, answer), "it can be solved in fewer moves")
-      |> add(Enum.reject(traps, &trap_fails?(goal, board, n + deep, &1)), fn bad ->
-        "the tempting moves #{inspect(bad)} do not fail at a depth of #{n + deep}"
-      end)
-      |> add(
-        not answer_holds?(goal, board, n + deep, answer),
-        "the answer does not hold at a depth of #{n + deep}"
-      )
+      |> add(not needs_all_moves?(goal, board, n), "it can be solved in fewer moves")
+
+    # The deep checks are slow. They run only when the fast checks pass.
+    errors =
+      if errors == [] do
+        errors
+        |> add(Enum.reject(traps, &trap_fails?(goal, board, n + deep, &1)), fn bad ->
+          "the tempting moves #{inspect(bad)} do not fail at a depth of #{n + deep}"
+        end)
+        |> add(
+          not answer_holds?(goal, board, n + deep, deep, answer),
+          "the answer does not hold at a depth of #{n + deep}"
+        )
+      else
+        errors
+      end
       |> Enum.reverse()
 
     %{
@@ -93,15 +110,16 @@ defmodule Go.Puzzles.Check do
     end
   end
 
-  defp needs_all_moves?(_goal, _board, 1, _answer), do: true
+  defp needs_all_moves?(_goal, _board, 1), do: true
 
-  defp needs_all_moves?(%{type: :capture} = goal, board, n, _answer),
+  defp needs_all_moves?(%{type: :capture} = goal, board, n),
     do: not Goal.reachable?(goal, board, n - 1)
 
-  # An escape puzzle needs all its moves when a shorter horizon lets other
-  # first moves work too.
-  defp needs_all_moves?(%{type: :escape} = goal, board, n, answer),
-    do: Goal.good_moves(goal, board, n - 1) != [answer]
+  # If Blue does nothing, Red needs all its moves to capture the fort.
+  defp needs_all_moves?(%{type: :escape} = goal, board, n) do
+    Solver.attacker_wins?(board, goal.target, :red, :red, n, passes_only: true) and
+      not Solver.attacker_wins?(board, goal.target, :red, :red, n - 1, passes_only: true)
+  end
 
   defp trap_fails?(%{type: :capture} = goal, board, depth, trap) do
     {:ok, next, _} = Board.play(board, :blue, trap)
@@ -110,15 +128,18 @@ defmodule Go.Puzzles.Check do
       not Solver.attacker_wins?(next, goal.target, :blue, :red, depth - 1)
   end
 
-  defp trap_fails?(%{type: :escape} = goal, board, _depth, trap) do
-    not Goal.good_move?(goal, board, goal.moves, trap)
-  end
+  # A wrong escape move is wrong in real Go already (see Go.Goal).
+  defp trap_fails?(%{type: :escape}, _board, _depth, _trap), do: true
 
-  defp answer_holds?(_goal, _board, _depth, nil), do: false
-  defp answer_holds?(%{type: :capture}, _board, _depth, _answer), do: true
+  defp answer_holds?(_goal, _board, _depth, _deep, nil), do: false
+  defp answer_holds?(%{type: :capture}, _board, _depth, _deep, _answer), do: true
 
-  defp answer_holds?(%{type: :escape} = goal, board, depth, answer) do
-    {:ok, next, _} = Board.play(board, :blue, answer)
-    not Solver.attacker_wins?(next, goal.target, :red, :red, depth)
+  defp answer_holds?(%{type: :escape} = goal, board, depth, deep, answer) do
+    # With the default depth, the good-move check of Go.Goal did this already.
+    deep == Goal.deep() or
+      (
+        {:ok, next, _} = Board.play(board, :blue, answer)
+        not Solver.attacker_wins?(next, goal.target, :red, :red, depth)
+      )
   end
 end

@@ -52,7 +52,7 @@ defmodule GoWeb.RedTurnTest do
 
   test "Red plays out a long punishment one move at a time", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/play/escape?id=escape-10")
-    html = tap_point(view, {0, 4})
+    html = tap_point(view, {4, 2})
     assert text(html, "#feedback") == nil
     html = eventually(view, &(text(&1, "#fb-title") == "Your fort fell"), 80)
     assert_next_step(html)

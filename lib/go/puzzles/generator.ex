@@ -68,33 +68,44 @@ defmodule Go.Puzzles.Generator do
       variations: length(variations),
       valid: 0,
       different: 0,
-      good: 0,
-      good_list: []
+      good: 0
     }
 
-    {acc, seen} =
-      Enum.reduce(variations, {acc, seen}, fn base, {acc, seen} ->
+    # First the cheap part, in order: drop the bad positions and the copies.
+    {acc, seen, todo} =
+      Enum.reduce(variations, {acc, seen, []}, fn base, {acc, seen, todo} ->
         puzzle = to_puzzle(base, template, name, type, base.max)
 
         cond do
           not valid?(base, type) ->
-            {acc, seen}
+            {acc, seen, todo}
 
           MapSet.member?(seen, position_key(puzzle)) ->
-            {%{acc | valid: acc.valid + 1}, seen}
+            {%{acc | valid: acc.valid + 1}, seen, todo}
 
           true ->
             seen = MapSet.put(seen, position_key(puzzle))
             acc = %{acc | valid: acc.valid + 1, different: acc.different + 1}
-
-            case solve(puzzle, min_moves(template, swapped?), base.max) do
-              nil -> {acc, seen}
-              good -> {%{acc | good: acc.good + 1, good_list: [good | acc.good_list]}, seen}
-            end
+            {acc, seen, [{puzzle, base.max} | todo]}
         end
       end)
 
-    kept = keep(Enum.reverse(acc.good_list), template.limit)
+    # Then the solver checks, on all cores. The order of the results does
+    # not change, so the same seed gives the same bank.
+    min = min_moves(template, swapped?)
+
+    good_list =
+      todo
+      |> Enum.reverse()
+      |> Task.async_stream(fn {puzzle, max} -> solve(puzzle, min, max) end,
+        ordered: true,
+        timeout: :infinity,
+        max_concurrency: System.schedulers_online()
+      )
+      |> Enum.flat_map(fn {:ok, result} -> if result, do: [result], else: [] end)
+
+    acc = %{acc | good: length(good_list)}
+    kept = keep(good_list, template.limit)
 
     puzzles =
       kept
@@ -128,7 +139,13 @@ defmodule Go.Puzzles.Generator do
     end
   end
 
-  @doc "The variations of a base: the base, its shifts, and its helper stones."
+  @doc """
+  The variations of a base: the base, its shifts, and its helper stones.
+  A base with `fixed: true` already has its helper stone in the escape
+  path, and it has no other variations.
+  """
+  def variations(%{fixed: true} = base, _helpers?), do: [base]
+
   def variations(base, helpers?) do
     shifted = [base | shifts(base)]
 
@@ -240,15 +257,15 @@ defmodule Go.Puzzles.Generator do
     end
   end
 
+  # The move count of an escape puzzle is the danger: if Blue does nothing,
+  # Red captures the fort in this many moves.
   defp solve(%Puzzle{goal: %{type: :escape}} = p, min, max) do
     board = Puzzle.board(p)
-    # The fort must be in danger: Red catches it if Blue does nothing.
-    max
-    |> Range.new(min, -1)
-    |> Enum.find_value(fn n ->
-      if Solver.attacker_wins?(board, p.goal.target, :red, :red, n, passes_only: true),
-        do: checked(%{p | goal: %{p.goal | moves: n}})
-    end)
+
+    case Enum.find(1..max, &Solver.attacker_wins?(board, p.goal.target, :red, :red, &1, passes_only: true)) do
+      n when is_integer(n) and n >= min -> checked(%{p | goal: %{p.goal | moves: n}})
+      _ -> nil
+    end
   end
 
   defp checked(puzzle) do

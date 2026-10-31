@@ -170,13 +170,13 @@ defmodule Go.Puzzles.Starter do
         rows: [
           ". r R . .",
           ". B B . .",
-          ". . . . .",
+          "R R . . .",
           ". . . . .",
           ". . . . ."
         ],
         answer: {0, 3},
         title: "Chase into the corner",
-        say: "Catch the red wall in 2 moves. Chase it toward the corner, where it has no roads.",
+        say: "Catch the red wall in 2 moves. Chase it toward the corner, where it has no roads. Watch out for its friends below.",
         hint: "Close the road that leads away from the corner.",
         better:
           "Build at the right end of the red wall. Then Red can only run into the corner, and there it has only 1 road.",
@@ -184,7 +184,7 @@ defmodule Go.Puzzles.Starter do
           {0, 0} => %{
             what: "Red built below your corner tower, and your tower fell.",
             why:
-              "Your tower in the corner had only 1 road. Red closed it, and then the red wall had 2 roads again.",
+              "Your tower in the corner had only 1 road. Red closed it. Now the red wall has 2 roads again, and a way down to its friends.",
             reply: {1, 0}
           }
         }
@@ -196,7 +196,7 @@ defmodule Go.Puzzles.Starter do
         template: "edge_chase",
         rows: [
           ". . . r .",
-          ". . . B .",
+          ". R . B .",
           ". . . . .",
           ". . . . .",
           ". . . . ."
@@ -204,15 +204,15 @@ defmodule Go.Puzzles.Starter do
         answer: {0, 2},
         title: "Chase along the edge",
         say:
-          "Catch the red tower in 2 moves. The edge closes roads for free. Chase Red toward the corner.",
+          "Catch the red tower in 2 moves. The edge closes roads for free. Chase Red toward the corner, away from its friend.",
         hint: "Which road leads away from the corner?",
         better:
           "Build to the left of the red tower. Then Red must run into the corner, and you can close its last road.",
         wrong: %{
           {0, 4} => %{
-            what: "Red ran to the left, away from the corner. Now it has 2 roads.",
+            what: "Red ran to the left, toward its friend. Now it has 2 roads.",
             why:
-              "Your move closed the road toward the corner. Red ran the other way, into open space. You have only 1 move left, and Red has 2 roads.",
+              "Your move closed the road toward the corner. Red ran the other way, toward its friend. You have only 1 move left, and Red has 2 roads.",
             reply: {0, 2}
           }
         }
@@ -253,7 +253,7 @@ defmodule Go.Puzzles.Starter do
         template: "ladder",
         rows: [
           "R . . . . . .",
-          ". . . . . . .",
+          ". . . R . . .",
           ". B . . . . .",
           "B r . . . . .",
           ". . B . . . .",
@@ -263,15 +263,15 @@ defmodule Go.Puzzles.Starter do
         answer: {3, 2},
         title: "The ladder",
         say:
-          "Catch the red tower in 3 moves. Each time, leave Red only 1 road. Red runs in steps, like on a ladder, until it hits the edge.",
+          "Catch the red tower in 3 moves. Each time, leave Red only 1 road. Red runs in steps, like on a ladder, until it hits the edge. Do not let it run toward its friend.",
         hint: "Close the road on the right. Then Red can only run down.",
         better:
           "Build to the right of Red. Then Red runs down, and you chase it to the edge, one step at a time.",
         wrong: %{
           {4, 1} => %{
-            what: "Red ran right, into open space.",
+            what: "Red ran right, toward its friend.",
             why:
-              "Your move closed the road below Red, but it left the road on the right open. There Red gets many roads.",
+              "Your move closed the road below Red, but it left the road on the right open. That way leads to the friend of Red.",
             reply: {3, 2}
           }
         }
@@ -380,13 +380,13 @@ defmodule Go.Puzzles.Starter do
           ". R . . .",
           "R b R . .",
           ". . . . .",
-          ". . . . ."
+          ". B . . ."
         ],
         answer: {3, 1},
-        title: "Run down",
-        say: "Red closed three roads of your tower. Run out on the last one!",
+        title: "Run down to a friend",
+        say: "Red closed three roads of your tower. Run out on the last one! A friend waits below.",
         hint: "Which road is still open?",
-        better: "Build below your tower. There your fort gets 3 new roads."
+        better: "Build below your tower. There it joins its friend, and your fort gets many roads."
       },
       %{
         id: "escape-03",
@@ -438,7 +438,7 @@ defmodule Go.Puzzles.Starter do
         rows: [
           ". B R b .",
           ". . . R .",
-          ". R R . .",
+          ". R R B .",
           ". . . . .",
           ". . . . ."
         ],
@@ -464,7 +464,7 @@ defmodule Go.Puzzles.Starter do
         rows: [
           ". . . . .",
           "b R R . .",
-          "B R . . .",
+          "B R B . .",
           "R B . . .",
           ". . . . ."
         ],
@@ -567,30 +567,24 @@ defmodule Go.Puzzles.Starter do
       %{
         id: "escape-10",
         type: :escape,
-        moves: 3,
+        moves: 2,
         template: "escape_extend",
         rows: [
-          ". R . b .",
-          ". . . B R",
-          ". . . R .",
           ". . . . .",
+          ". . . B B",
+          ". . R . .",
+          ". . b R .",
           ". . . . ."
         ],
-        answer: {1, 2},
-        title: "Run to the middle",
-        say:
-          "Your fort stands on the edge. Red has 3 moves to attack. Run where your fort gets the most roads.",
-        hint: "Count the roads for each spot. The edge gives few roads.",
-        better: "Build to the left of your lower tower. There your fort gets the most roads.",
+        answer: {3, 1},
+        title: "Away from the edge",
+        say: "Red attacks your tower. It has 2 open roads: one leads to the edge, and one leads to open space. Run the right way!",
+        hint: "The edge has no roads. Where does your fort get more roads?",
+        better: "Run left, away from the edge. There your fort gets 4 roads.",
         wrong: %{
-          {0, 2} => %{
+          {4, 2} => %{
             what: nil,
-            why:
-              "Your move went along the edge. The edge gives few roads, and Red closed the way to the middle."
-          },
-          {0, 4} => %{
-            what: nil,
-            why: "Your move went into the corner. The corner gives no new roads."
+            why: "Your tower ran to the edge. The edge gives few roads, so Red could close them one at a time."
           }
         }
       },
@@ -601,26 +595,24 @@ defmodule Go.Puzzles.Starter do
         template: "escape_extend",
         rows: [
           ". . . . .",
-          ". . B R .",
+          ". . . . b",
           ". . . R .",
-          ". . . b .",
-          ". R R . B"
+          ". . R B R",
+          ". . . . ."
         ],
-        answer: {3, 2},
-        title: "Which way?",
-        say:
-          "Your tower has 3 open roads, but Red is all around. Red has 3 moves. Find the way out.",
-        hint: "Run toward open space and your friend, away from the edge.",
-        better:
-          "Build to the left of your tower. That way leads to open space and to your friend.",
+        answer: {1, 3},
+        title: "Run to the middle",
+        say: "Your tower stands on the edge, and Red comes near. Run where your fort gets the most roads.",
+        hint: "Count the roads for each spot. The edge and the corner give few roads.",
+        better: "Build to the left of your tower, toward the middle. There your fort gets the most roads.",
         wrong: %{
-          {3, 4} => %{
+          {0, 4} => %{
             what: nil,
-            why: "Your move went to the edge. There your fort had only a few roads."
+            why: "Your tower went into the corner. The corner gives no new roads, and Red closed the way to the middle."
           },
-          {4, 3} => %{
+          {2, 4} => %{
             what: nil,
-            why: "Your move went down, toward the edge and the red towers."
+            why: "Your tower went down along the edge, toward the red towers. Red closed the way to the middle."
           }
         }
       }

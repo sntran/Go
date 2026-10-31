@@ -94,7 +94,7 @@ defmodule GoWeb.PuzzleLiveTest do
       assert text(html, "#fb-title") == "Red got away"
 
       assert text(html, "#fb-what") ==
-               "What happened: Red ran to the left, away from the corner. Now it has 2 roads."
+               "What happened: Red ran to the left, toward its friend. Now it has 2 roads."
 
       assert text(html, "#fb-why") =~ "Why: Your move closed the road toward the corner."
       assert text(html, "#fb-better") =~ "Better move: Build to the left of the red tower."
@@ -116,10 +116,10 @@ defmodule GoWeb.PuzzleLiveTest do
 
     test "Red plays out the whole punishment in a longer escape", %{conn: conn} do
       {view, _html} = open(conn, "escape-10")
-      html = tap_point(view, {0, 4})
+      html = tap_point(view, {4, 2})
       assert text(html, "#fb-title") == "Your fort fell"
       assert text(html, "#fb-what") =~ "one by one"
-      assert text(html, "#fb-why") =~ "corner"
+      assert text(html, "#fb-why") =~ "edge"
       assert text(html, "#watch") == "Watch again"
     end
 

@@ -6,7 +6,11 @@ defmodule Go.Fixtures do
 
   alias Go.Puzzle
 
-  @doc "Edge chase, 5x5, capture in 2 moves."
+  @doc """
+  Edge chase, 5x5, capture in 2 moves. The red helper at (1,1) gives Red a
+  real escape after the wrong move (0,4). Without it, Blue catches Red at
+  the other corner some moves later.
+  """
   def edge_chase do
     %Puzzle{
       id: "fixture-edge-chase",
@@ -14,7 +18,7 @@ defmodule Go.Fixtures do
       goal: %{type: :capture, target: {0, 3}, moves: 2},
       size: 5,
       blue: [{1, 3}],
-      red: [{0, 3}],
+      red: [{0, 3}, {1, 1}],
       answer: {0, 2},
       template: "edge_chase",
       wrong: %{{0, 4} => %{what: nil, why: nil, reply: {0, 2}}}

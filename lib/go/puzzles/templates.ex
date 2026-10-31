@@ -8,7 +8,8 @@ defmodule Go.Puzzles.Templates do
   all puzzles come from templates.
 
   A base is a map with `:size`, `:blue`, `:red`, `:target` and `:max`
-  (the most moves to try). The generator finds the smallest number of
+  (the most moves to try), and optionally `fixed: true` (see
+  `Go.Puzzles.Generator.variations/2`). The generator finds the smallest number of
   moves that solves it. A template also has `:min`, the fewest moves of
   its idea: an edge chase in 1 move is not an edge chase.
 
@@ -119,8 +120,9 @@ defmodule Go.Puzzles.Templates do
         "Close the road on the open side. Then Red can only run toward the corner, where it has no roads.",
       trap_why: "Your move chased Red away from the corner, into open space.",
       bases: fn ->
-        for size <- [5, 7], c <- 1..(size - 2) do
-          %{size: size, red: [{0, c}], blue: [{1, c}], target: {0, c}, max: 3}
+        for size <- [5, 7], c <- 1..(size - 2), helper <- [nil | edge_helpers(size, c)] do
+          base = %{size: size, red: [{0, c}], blue: [{1, c}], target: {0, c}, max: 3}
+          with_helper(base, helper)
         end
       end
     }
@@ -151,9 +153,35 @@ defmodule Go.Puzzles.Templates do
             max: 4
           }
         end
+        |> Enum.flat_map(fn base -> [base | Enum.map(far_helpers(base), &with_helper(base, &1))] end)
       end
     }
   end
+
+  # The red helper stones in the escape path along the edge: on the edge
+  # row and the row below it, not next to the stones.
+  defp edge_helpers(size, c) do
+    for row <- [0, 1], h <- 0..(size - 1), abs(h - c) >= 2, do: {row, h}
+  end
+
+  # The red helper stones in the escape path of a ladder: 2 to 4 points
+  # from the target, and not next to the stones of the base.
+  defp far_helpers(%{size: size, target: {tr, tc}} = base) do
+    stones = base.blue ++ base.red
+    board = %Go.Board{size: size}
+
+    for r <- 0..(size - 1),
+        c <- 0..(size - 1),
+        d = max(abs(r - tr), abs(c - tc)),
+        d >= 2 and d <= 4,
+        {r, c} not in stones,
+        Enum.all?(Go.Board.neighbors(board, {r, c}), &(&1 not in stones)),
+        do: {r, c}
+  end
+
+  # A base with a red helper stone. Such a base has no other variations.
+  defp with_helper(base, nil), do: base
+  defp with_helper(base, helper), do: Map.put(%{base | red: [helper | base.red]}, :fixed, true)
 
   @doc "Net: an answer that does not touch Red. It closes the way out."
   def net do

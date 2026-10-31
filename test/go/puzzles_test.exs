@@ -64,7 +64,7 @@ defmodule Go.PuzzlesTest do
       }
 
       assert %{ok: false, errors: errors} = Check.run(p)
-      assert Enum.any?(errors, &(&1 =~ "does not hold"))
+      assert Enum.any?(errors, &(&1 =~ "correct first moves are []"))
     end
   end
 
@@ -134,9 +134,25 @@ defmodule Go.PuzzlesTest do
   end
 
   describe "generator" do
+    # Small templates with few bases, so that the tests are fast.
+    defp small_edge_chase do
+      base = %{size: 5, red: [{0, 3}], blue: [{1, 3}], target: {0, 3}, max: 3}
+
+      %{
+        Templates.edge_chase()
+        | helpers: false,
+          bases: fn -> [base, Map.put(%{base | red: [{1, 1} | base.red]}, :fixed, true)] end
+      }
+    end
+
+    defp small_escape_capture do
+      t = Templates.escape_capture()
+      %{t | helpers: false, bases: fn -> Enum.take(t.bases.(), 2) end}
+    end
+
     test "each template gives good, different puzzles that pass the checks" do
       %{puzzles: puzzles, stats: stats} =
-        Generator.run(templates: [Templates.edge_chase(), Templates.escape_capture()])
+        Generator.run(templates: [small_edge_chase(), small_escape_capture()])
 
       assert Enum.map(stats, & &1.template) == [
                "edge_chase",
@@ -145,9 +161,11 @@ defmodule Go.PuzzlesTest do
              ]
 
       for s <- stats do
-        assert s.good > 0, "no good puzzle from #{s.template}"
         assert s.good <= s.different and s.different <= s.variations
       end
+
+      assert Enum.find(stats, &(&1.template == "edge_chase")).good > 0
+      assert Enum.find(stats, &(&1.template == "escape_capture")).good > 0
 
       keys = Enum.map(puzzles, &Symmetry.key/1)
       assert length(Enum.uniq(keys)) == length(keys)
@@ -159,15 +177,27 @@ defmodule Go.PuzzlesTest do
       end
     end
 
-    test "an edge chase never comes as a capture in 1" do
-      %{puzzles: puzzles} = Generator.run(templates: [Templates.edge_chase()])
+    test "the edge chase needs a red helper: the plain base fails the deep check" do
+      %{puzzles: puzzles} = Generator.run(templates: [small_edge_chase()])
+      captures = Enum.filter(puzzles, &(&1.goal.type == :capture))
+      assert captures != []
+      assert Enum.all?(captures, &(length(&1.red) == 2))
       assert Enum.all?(puzzles, &(&1.goal.type == :escape or &1.goal.moves >= 2))
     end
 
     test "it skips copies of known puzzles" do
-      %{puzzles: puzzles} = Generator.run(templates: [Templates.net()], known: [Fixtures.net()])
-      key = Symmetry.key(Fixtures.net())
+      key = Symmetry.key(Fixtures.edge_chase())
+      %{puzzles: before} = Generator.run(templates: [small_edge_chase()])
+      assert Enum.any?(before, &(Symmetry.key(&1) == key))
+
+      %{puzzles: puzzles} = Generator.run(templates: [small_edge_chase()], known: [Fixtures.edge_chase()])
       refute Enum.any?(puzzles, &(Symmetry.key(&1) == key))
+    end
+
+    test "the same seed gives the same puzzles" do
+      a = Generator.run(templates: [small_edge_chase()], seed: 3)
+      b = Generator.run(templates: [small_edge_chase()], seed: 3)
+      assert a == b
     end
   end
 
@@ -182,11 +212,14 @@ defmodule Go.PuzzlesTest do
       end
     end
 
-    test "each puzzle in the bank passes the checks" do
-      for p <- Puzzles.all() do
-        report = Check.run(p)
-        assert report.ok, "#{p.id}: #{Enum.join(report.errors, "; ")}"
-        assert report.good == [p.answer]
+    # The deep checks: a tempting wrong move fails, and the fort of an
+    # escape puzzle lives, up to the move limit plus Go.Goal.deep() moves.
+    for p <- Puzzles.all() do
+      @p p
+      test "#{p.id} in the bank passes all checks, also the deep ones" do
+        report = Check.run(@p)
+        assert report.ok, Enum.join(report.errors, "; ")
+        assert report.good == [@p.answer]
       end
     end
 

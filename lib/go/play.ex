@@ -136,11 +136,13 @@ defmodule Go.Play do
         last_turn: %{board: before, steps: [{:blue, point}]}
     }
 
+    good = Goal.good_move?(goal, before, snapshot.left, point)
+
     cond do
-      Goal.reached?(goal, next, left) ->
+      good and Goal.reached_after_good?(goal, next, left) ->
         solved(play, captured)
 
-      Goal.good_move?(goal, before, snapshot.left, point) ->
+      good ->
         red = Goal.red_move(goal, next, left)
 
         %{
@@ -161,7 +163,10 @@ defmodule Go.Play do
     reply = if hand, do: Map.get(hand, :reply)
     line = punish_line(goal, play.board, play.left, reply)
     better = Goal.blue_move(goal, before, left_before, if(start?, do: play.puzzle.answer))
-    feedback = Explain.wrong(play.puzzle, before, point, line, left_before, better, start?)
+    later = caught_later?(goal, Explain.replay(play.board, line), play.left)
+
+    feedback =
+      Explain.wrong(play.puzzle, before, point, line, left_before, better, start?, caught_later: later)
     steps = Enum.map(line, fn {color, move, _} -> {color, move} end)
 
     %{
@@ -183,10 +188,19 @@ defmodule Go.Play do
     [{:red, move, captured}]
   end
 
+  # In an escape puzzle, Red can need more moves than the limit: a wrong
+  # move is wrong if the fort dies in the moves left plus Goal.deep().
   defp punish_line(%{type: :escape} = goal, board, left, reply) do
     first = if punishes?(goal, board, left, reply), do: reply
-    escape_line(goal, board, left, first, [], 12)
+    escape_line(goal, board, left + Goal.deep(), first, [], 12)
   end
+
+  # In a capture puzzle: Blue can still catch Red later, but not in the
+  # moves that are left.
+  defp caught_later?(%{type: :capture} = goal, board, left),
+    do: not Go.Solver.captured?(board, goal.target, :red) and not Goal.settled?(goal, board, left, :blue)
+
+  defp caught_later?(_goal, _board, _left), do: false
 
   @doc false
   def punishes?(_goal, _board, _left, nil), do: false
@@ -201,7 +215,7 @@ defmodule Go.Play do
 
           :escape ->
             Go.Solver.captured?(next, goal.target, :blue) or
-              Go.Solver.attacker_wins?(next, goal.target, :red, :blue, left - 1)
+              Go.Solver.attacker_wins?(next, goal.target, :red, :blue, left - 1 + Goal.deep())
         end
 
       {:error, _} ->
@@ -211,6 +225,7 @@ defmodule Go.Play do
 
   defp escape_line(_goal, _board, _left, _first, acc, 0), do: Enum.reverse(acc)
 
+  # `left` is the horizon: the red moves that are left for the capture.
   defp escape_line(goal, board, left, first, acc, budget) do
     red = first || Goal.red_move(goal, board, left)
     {:ok, board, captured} = Board.play(board, :red, red)
@@ -299,12 +314,9 @@ defmodule Go.Play do
     play = %{play | outcome: nil}
 
     cond do
-      Goal.reached?(goal, play.board, play.left) ->
+      # The last blue move was good, so Blue can still reach the goal.
+      Goal.reached_after_good?(goal, play.board, play.left) ->
         solved(play, captured)
-
-      not Goal.reachable?(goal, play.board, play.left) ->
-        # The solver said that the blue move was good, so this does not happen.
-        %{play | status: :failed, message: "Red got away."}
 
       true ->
         %{
@@ -512,7 +524,7 @@ defmodule Go.Play do
         left = Goal.after_blue(goal, left)
         acc = [{:blue, blue} | acc]
 
-        if Goal.reached?(goal, board, left) do
+        if Goal.reached_after_good?(goal, board, left) do
           Enum.reverse(acc)
         else
           red = Goal.red_move(goal, board, left)
@@ -520,7 +532,7 @@ defmodule Go.Play do
           left = Goal.after_red(goal, left)
           acc = [{:red, red} | acc]
 
-          if Goal.reached?(goal, board, left),
+          if Goal.reached_after_good?(goal, board, left),
             do: Enum.reverse(acc),
             else: answer_line(goal, board, left, nil, acc, budget - 1)
         end

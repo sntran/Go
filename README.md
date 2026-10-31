@@ -64,12 +64,23 @@ The tests include:
 
 - the rules (capture, suicide, ko), the solver, and the two verified
   puzzles of the plan (the edge chase and the net),
+- a comparison of the solver with a slow reference solver
+  (`test/support/reference_solver.ex`) that tries all legal moves: on
+  1000 random 5x5 positions, and on the puzzles of the bank,
 - the checks of the generator, and a check of each puzzle in the bank,
 - LiveView tests with real taps and clicks for each puzzle flow: the
   correct line, the typical wrong moves and their explanations, "Show the
   better move", "Watch again", "Go back one move", "Try again", the hints
   and the stars, "Show the answer", "Next puzzle", and taps on occupied
   points, on illegal points and during the turn of Red.
+
+The comparison with the reference solver on the bank puzzles that are
+bigger than 5x5 is slow (some minutes). `mix test` does not run it. Run it
+with:
+
+```sh
+mix test --include reference
+```
 
 ## Make the puzzle bank
 
@@ -85,12 +96,22 @@ the same file. Commit the file after you make it again.
 Each puzzle in the bank passes these checks:
 
 - It has exactly one correct first move, on the whole board.
-- It cannot be solved in fewer moves.
-- Each tempting wrong move (a move that touches the target, or that takes
-  stones) really fails, also 2 moves deeper than the limit.
-- In an escape puzzle, the fort lives also 2 moves deeper than the limit
-  after the correct move.
+- It cannot be solved in fewer moves. In an escape puzzle, the move limit
+  is the danger: if Blue does nothing, Red needs exactly that many moves to
+  capture the fort.
+- Each tempting wrong move of a capture puzzle (a move that touches the
+  target, or that takes stones) really fails: Blue cannot capture Red in
+  the move limit plus 6 moves.
+- In an escape puzzle, a move is correct only if the fort really lives:
+  Red cannot capture it in the move limit plus 6 moves. The game also uses
+  this check during play, so it shows "Your fort is safe!" only when the
+  fort is safe.
 - It is not a copy of another puzzle, also after rotation or mirroring.
+
+The checks are true in real Go, not only in the move limit. On a small
+board, a group with few roads often dies some moves later. Thus the
+templates for the edge chase and the ladder also have red helper stones
+("friends") in the escape path, so that a wrong move really fails.
 
 ### The yield
 
@@ -131,11 +152,17 @@ puzzles: 46 in each world.
 | The pages | `lib/go_web/live/`, `lib/go_web/components/board_components.ex` |
 
 The solver searches the attacker and the defender to a depth of N
-attacker moves. It looks only at moves near the fight: the liberties of
-the target, the liberties of these liberties, and the liberties of groups
-next to the target that are in atari. It uses a sound cut: a target with
-L liberties needs at least L attacker moves. It keeps a cache of the
-positions that it already checked.
+attacker moves. It looks only at moves near the fight:
+
+- the liberties of the target, and the liberties of these liberties,
+- the liberties of enemy groups next to the target that have 3 liberties
+  or fewer (counter-attacks for the defender, rescues for the attacker),
+- the liberties of friend groups that touch a liberty of the target and
+  have 3 liberties or fewer.
+
+It uses a sound cut: a target with L liberties needs at least L attacker
+moves. It keeps a cache of the positions that it already checked. The
+tests compare it with the reference solver, which tries all legal moves.
 
 ### Stars
 

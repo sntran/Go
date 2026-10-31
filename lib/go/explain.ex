@@ -31,6 +31,10 @@ defmodule Go.Explain do
     * `better`: the better move on `before`, or nil.
     * `start?`: true if `before` is the start of the puzzle. Then the
       hand-written texts of the puzzle apply.
+
+  The option `caught_later: true` tells that Blue can still capture Red
+  later, but not in the moves that are left. Then the texts do not say
+  that Red got away.
   """
   @spec wrong(
           Puzzle.t(),
@@ -39,10 +43,11 @@ defmodule Go.Explain do
           list(),
           non_neg_integer(),
           Board.point() | nil,
-          boolean()
+          boolean(),
+          keyword()
         ) ::
           feedback()
-  def wrong(puzzle, before, move, line, left, better, start?) do
+  def wrong(puzzle, before, move, line, left, better, start?, opts \\ []) do
     goal = puzzle.goal
     {:ok, after_blue, _} = Board.play(before, :blue, move)
     final = replay(after_blue, line)
@@ -51,7 +56,10 @@ defmodule Go.Explain do
 
     made =
       case goal.type do
-        :capture -> capture_texts(goal, before, move, after_blue, line, final, left, better)
+        :capture ->
+          later = Keyword.get(opts, :caught_later, false)
+          capture_texts(goal, before, move, after_blue, line, final, left, better, later)
+
         :escape -> escape_texts(goal, before, move, after_blue, line, final, better)
       end
 
@@ -75,7 +83,7 @@ defmodule Go.Explain do
 
   ## Capture: Blue attacks, Red escapes.
 
-  defp capture_texts(goal, before, move, after_blue, line, final, left, better) do
+  defp capture_texts(goal, before, move, after_blue, line, final, left, better, later) do
     target = goal.target
     roads_before = Board.liberty_count(before, target)
     roads_after = Board.liberty_count(final, target)
@@ -135,6 +143,12 @@ defmodule Go.Explain do
 
     second =
       cond do
+        later and blue_left == 0 ->
+          " You have no moves left. You could catch Red later, but not in time."
+
+        later ->
+          " You can still catch Red later, but not in #{moves(blue_left)}."
+
         blue_left == 0 ->
           " You have no moves left."
 
@@ -146,7 +160,7 @@ defmodule Go.Explain do
       end
 
     %{
-      title: "Red got away",
+      title: if(later, do: "Not fast enough", else: "Red got away"),
       what: what,
       why: first <> second,
       better: better_capture(before, target, better)
@@ -285,8 +299,8 @@ defmodule Go.Explain do
     n = Board.liberty_count(board, goal.target)
 
     if left == 0,
-      do: "Red has no moves left, and your fort still stands with #{roads(n)}.",
-      else: "Your fort has #{roads(n)}. Red cannot close them all in time."
+      do: "Red has no moves left, and your fort still stands with #{roads(n)}. It is safe.",
+      else: "Your fort has #{roads(n)}. It is safe now: Red cannot catch it, not even with more moves."
   end
 
   ## Helpers.

@@ -123,9 +123,10 @@ Coordinates are (row, column), from 0, row 0 at the top.
 
 **Edge chase, 5x5, capture in 2 moves**
 
-- Red: (0,3). Blue: (1,3). Blue plays first.
+- Red target: (0,3). Red helper ("friend"): (1,1). Blue: (1,3). Blue plays first.
 - Only answer: Blue (0,2). Red runs to (0,4). Blue (1,4) captures both red stones.
 - Wrong: Blue (0,4). Red runs to (0,2) and has 2 liberties. Not solved.
+- Correction: my first version of this fixture had no red helper. On an empty 5x5 board, the wrong move (0,4) does not really fail: Red runs along the edge to the other corner, and Blue catches it there some moves later. The helper at (1,1) gives Red a real escape after the wrong move. The answer does not change.
 
 **Net, 9x9, capture in 3 moves**
 

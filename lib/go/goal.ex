@@ -7,8 +7,16 @@ defmodule Go.Goal do
 
     * `:capture`: Blue attacks. Blue must capture the target group in
       `moves` Blue moves. The "moves left" count Blue moves.
-    * `:escape`: Red attacks. The target is a blue group, and it must live
-      for `moves` Red moves. The "moves left" count Red moves.
+    * `:escape`: Red attacks. The target is a blue group. If Blue does
+      nothing, Red captures it in `moves` Red moves. The "moves left" count
+      Red moves.
+
+  A move is good only if it is true in real Go, not only in the move
+  limit. In an escape puzzle, a blue move is good only if Red cannot
+  capture the fort in the moves that are left plus `deep/0` more moves.
+  Thus the game never says "Your fort is safe!" when Red can still catch
+  the fort some moves later. `Go.Puzzles.Check` uses the same depth for
+  the tempting wrong moves of a capture puzzle.
 
   The worlds that come later (connect and cut, eyes, ko, fields) add more
   types. Each type must give the functions of this module.
@@ -20,6 +28,13 @@ defmodule Go.Goal do
   @type t :: %{type: type(), target: Board.point(), moves: pos_integer()}
 
   @types [:capture, :escape]
+
+  # The extra moves of the deep checks: a fight must be settled after the
+  # move limit plus this many attacker moves.
+  @deep 6
+
+  @doc "The extra moves of the deep checks (see the module doc)."
+  def deep, do: @deep
 
   @doc "The goal types that the server can check now."
   def types, do: @types
@@ -43,19 +58,40 @@ defmodule Go.Goal do
 
   @spec after_red(t(), non_neg_integer()) :: non_neg_integer()
   def after_red(%{type: :capture}, left), do: left
-  def after_red(%{type: :escape}, left), do: left - 1
+  def after_red(%{type: :escape}, left), do: max(left - 1, 0)
 
   @doc """
-  Tells if the goal is reached. Call it after each move.
+  Tells if the goal is reached. Call it after each move, with the color
+  that plays next.
 
-  An escape goal is reached when Red has no moves left, or when Red cannot
-  capture the target in its moves even if Blue does nothing more.
+  An escape goal is reached when the fort is safe: Red cannot capture it
+  in the moves left plus `deep/0` (with the best defense of Blue), and
+  Red has no moves left or cannot capture it in its moves even if Blue
+  does nothing more.
   """
-  @spec reached?(t(), Board.t(), non_neg_integer()) :: boolean()
-  def reached?(%{type: :capture} = goal, board, _left),
+  @spec reached?(t(), Board.t(), non_neg_integer(), Board.color()) :: boolean()
+  def reached?(goal, board, left, to_move \\ :red)
+
+  def reached?(%{type: :capture} = goal, board, _left, _to_move),
     do: Solver.captured?(board, goal.target, :red)
 
-  def reached?(%{type: :escape} = goal, board, left) do
+  def reached?(%{type: :escape} = goal, board, left, to_move) do
+    not Solver.captured?(board, goal.target, :blue) and
+      (left == 0 or
+         not Solver.attacker_wins?(board, goal.target, :red, :red, left, passes_only: true)) and
+      not Solver.attacker_wins?(board, goal.target, :red, to_move, left + @deep)
+  end
+
+  @doc """
+  Tells if the goal is reached, when the last blue move was good (see
+  `good_move?/4`). Then the deep part of `reached?/4` is true already,
+  and this check is fast.
+  """
+  @spec reached_after_good?(t(), Board.t(), non_neg_integer()) :: boolean()
+  def reached_after_good?(%{type: :capture} = goal, board, _left),
+    do: Solver.captured?(board, goal.target, :red)
+
+  def reached_after_good?(%{type: :escape} = goal, board, left) do
     not Solver.captured?(board, goal.target, :blue) and
       (left == 0 or
          not Solver.attacker_wins?(board, goal.target, :red, :red, left, passes_only: true))
@@ -70,7 +106,7 @@ defmodule Go.Goal do
     do: left > 0 and Solver.attacker_wins?(board, goal.target, :blue, :blue, left)
 
   def reachable?(%{type: :escape} = goal, board, left),
-    do: not Solver.attacker_wins?(board, goal.target, :red, :blue, left)
+    do: not Solver.attacker_wins?(board, goal.target, :red, :blue, left + @deep)
 
   @doc """
   Tells if a blue move keeps the goal reachable. The move must be legal.
@@ -85,13 +121,15 @@ defmodule Go.Goal do
   end
 
   defp good_after?(%{type: :capture} = goal, next, left) do
-    reached?(goal, next, left) or
+    Solver.captured?(next, goal.target, :red) or
       (left > 0 and Solver.attacker_wins?(next, goal.target, :blue, :red, left))
   end
 
+  # The fort must live in the move limit (a fast check), and also deeper.
   defp good_after?(%{type: :escape} = goal, next, left) do
     not Solver.captured?(next, goal.target, :blue) and
-      not Solver.attacker_wins?(next, goal.target, :red, :red, left)
+      not Solver.attacker_wins?(next, goal.target, :red, :red, left) and
+      not Solver.attacker_wins?(next, goal.target, :red, :red, left + @deep)
   end
 
   @doc "Gives all good blue moves on the whole board."
@@ -103,17 +141,30 @@ defmodule Go.Goal do
   end
 
   @doc """
+  Tells if the fight is settled for the target after a wrong blue move:
+  the attacker cannot capture it in the moves left plus `deep/0`. Use it
+  with the color that plays next.
+  """
+  @spec settled?(t(), Board.t(), non_neg_integer(), Board.color()) :: boolean()
+  def settled?(goal, board, left, to_move) do
+    not Solver.attacker_wins?(board, goal.target, attacker(goal), to_move, left + @deep)
+  end
+
+  @doc """
   Gives the best red move. `left` is the count before the move.
 
   In a capture puzzle, Red defends: it escapes if it can, and else it
   makes the capture as long as possible. In an escape puzzle, Red attacks:
   it captures as fast as it can, and else it takes away the most roads.
-  `prefer` is a move to play if it is as good as the best one.
+  `prefer` is a move to play if it is as good as the best one. In an
+  escape puzzle, `horizon` is the most red moves after this one that the
+  capture can take (by default the moves that are left).
   """
-  @spec red_move(t(), Board.t(), non_neg_integer(), Board.point() | nil) :: Board.point() | :pass
-  def red_move(goal, board, left, prefer \\ nil)
+  @spec red_move(t(), Board.t(), non_neg_integer(), Board.point() | nil, non_neg_integer() | nil) ::
+          Board.point() | :pass
+  def red_move(goal, board, left, prefer \\ nil, horizon \\ nil)
 
-  def red_move(%{type: :capture} = goal, board, left, prefer) do
+  def red_move(%{type: :capture} = goal, board, left, prefer, _horizon) do
     moves = Solver.candidates(board, goal.target) ++ [:pass]
 
     scored =
@@ -127,15 +178,16 @@ defmodule Go.Goal do
     pick_best(scored, prefer)
   end
 
-  def red_move(%{type: :escape} = goal, board, left, prefer) do
+  def red_move(%{type: :escape} = goal, board, left, prefer, horizon) do
     moves = Solver.candidates(board, goal.target)
+    horizon = horizon || left - 1
 
     scored =
       for move <- moves, {:ok, next, _} <- [Board.play(board, :red, move)] do
         need =
           if Solver.captured?(next, goal.target, :blue),
             do: 0,
-            else: Solver.moves_to_capture(next, goal.target, :red, :blue, left - 1)
+            else: Solver.moves_to_capture(next, goal.target, :red, :blue, horizon)
 
         libs = Board.liberty_count(next, goal.target)
         safe = length(Board.group(next, move).liberties)
