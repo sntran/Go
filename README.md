@@ -25,6 +25,25 @@ The plan is in [`docs/plans/puzzle-system.md`](docs/plans/puzzle-system.md).
   in place of `mix` and `iex`).
 - No database. The puzzle bank is a data file in `priv/`.
 
+### Use BEAM.com
+
+`beam.com` is one file that has Erlang/OTP and Elixir. You install
+nothing else. BEAM.com has only pre-releases now, so the link
+`releases/latest/download` does not work. Download a release by its tag:
+
+```sh
+TAG=v0.1.0-rc.6
+curl -fLO https://github.com/sntran/BEAM.com/releases/download/$TAG/beam.com
+curl -fLO https://github.com/sntran/BEAM.com/releases/download/$TAG/SHA256SUMS
+grep " beam.com$" SHA256SUMS | sha256sum -c
+chmod +x beam.com
+ln -s beam.com mix.com && ln -s beam.com iex.com
+```
+
+Put the directory of `mix.com` on your `PATH`, then use `mix.com` in place
+of `mix` in all the commands below (for example `mix.com setup` and
+`mix.com test`).
+
 ## Run the app
 
 ```sh
