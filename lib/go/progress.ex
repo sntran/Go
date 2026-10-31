@@ -10,6 +10,12 @@ defmodule Go.Progress do
       the stars.
     * Before the server counts a result, it plays the moves again with the
       rules engine (see `Go.Play.verify/3`).
+
+  A warning for the leaderboard: `Go.Play.verify/3` checks only that the
+  moves are legal and that the result is true. It does not check that the
+  red moves are the moves of the solver. This is correct now, because the
+  server makes all red moves. But never accept a move list from the
+  browser: the browser could send red moves that help Blue.
   """
 
   use GenServer
