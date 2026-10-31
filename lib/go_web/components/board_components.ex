@@ -27,21 +27,29 @@ defmodule GoWeb.BoardComponents do
   attr :target, :any, default: nil
   attr :step, :integer, default: 0, doc: "a number that changes on each move, for the animations"
 
+  attr :view, :integer,
+    default: nil,
+    doc: "the size of the top-left window to show (the full board when nil)"
+
+  attr :fields, :map, default: %{}, doc: "the fields at the end of a game, as point => color"
+
   def board(assigns) do
-    n = assigns.board.size
+    full = assigns.board.size
+    n = min(assigns.view || full, full)
+    inside? = fn {r, c} -> r < n and c < n end
     pad = if n > 5, do: 32, else: 44
     cs = (@view - 2 * pad) / (n - 1)
     r = min(cs * 0.42, 32)
     castle = assigns.look == :castle
     groups = Board.groups(assigns.board, :blue) ++ Board.groups(assigns.board, :red)
-    show = fn g -> not assigns.hide_roads and (n <= 5 or length(g.liberties) <= 3) end
+    show = fn g -> not assigns.hide_roads and (full <= 5 or length(g.liberties) <= 3) end
 
     danger = for g <- groups, match?([_], g.liberties), p <- g.stones, into: MapSet.new(), do: p
 
     roads =
       groups
       |> Enum.filter(show)
-      |> Enum.flat_map(fn g -> Enum.map(g.liberties, &{&1, g.color}) end)
+      |> Enum.flat_map(fn g -> for l <- g.liberties, inside?.(l), do: {l, g.color} end)
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
       |> Enum.flat_map(fn {p, colors} ->
         colors = Enum.uniq(colors)
@@ -56,10 +64,11 @@ defmodule GoWeb.BoardComponents do
       for {{row, col} = p, color} <- Enum.sort(assigns.board.stones),
           q <- [{row, col + 1}, {row + 1, col}],
           Board.get(assigns.board, q) == color,
+          inside?.(p) and inside?.(q),
           do: {p, q, color}
 
     badges =
-      for g <- groups, show.(g) do
+      for g <- groups, show.(g), Enum.all?(g.stones, inside?) do
         {row, col} = Enum.min_by(g.stones, fn {row, col} -> {row, -col} end)
 
         %{
@@ -73,6 +82,12 @@ defmodule GoWeb.BoardComponents do
     assigns =
       assign(assigns,
         n: n,
+        full: full,
+        open: n < full,
+        glow: Enum.filter(assigns.glow, inside?),
+        marks: Map.filter(assigns.marks, fn {p, _} -> inside?.(p) end),
+        falls: Enum.filter(assigns.falls, fn {p, _} -> inside?.(p) end),
+        fields: Enum.filter(Enum.sort(assigns.fields), fn {p, _} -> inside?.(p) end),
         pad: pad,
         cs: cs,
         r: r,
@@ -81,8 +96,8 @@ defmodule GoWeb.BoardComponents do
         roads: roads,
         walls: walls,
         badges: badges,
-        stones: Enum.sort(assigns.board.stones),
-        points: Board.points(assigns.board)
+        stones: assigns.board.stones |> Enum.filter(fn {p, _} -> inside?.(p) end) |> Enum.sort(),
+        points: Enum.filter(Board.points(assigns.board), inside?)
       )
 
     ~H"""
@@ -91,7 +106,11 @@ defmodule GoWeb.BoardComponents do
       class={["board", @castle && "castles"]}
       viewBox="0 0 400 400"
       role="group"
-      aria-label={"Game board, #{@n} by #{@n}"}
+      aria-label={
+        if @open,
+          do: "Game board, the corner #{@n} by #{@n} of #{@full} by #{@full}",
+          else: "Game board, #{@n} by #{@n}"
+      }
     >
       <rect
         x="4"
@@ -105,7 +124,7 @@ defmodule GoWeb.BoardComponents do
         :for={k <- 0..(@n - 1)}
         x1={f(@pad)}
         y1={f(x(@pad, @cs, k))}
-        x2={f(400 - @pad)}
+        x2={f(if @open, do: 396, else: 400 - @pad)}
         y2={f(x(@pad, @cs, k))}
         class={if @castle, do: "path", else: "gridline"}
       />
@@ -114,9 +133,55 @@ defmodule GoWeb.BoardComponents do
         x1={f(x(@pad, @cs, k))}
         y1={f(@pad)}
         x2={f(x(@pad, @cs, k))}
-        y2={f(400 - @pad)}
+        y2={f(if @open, do: 396, else: 400 - @pad)}
         class={if @castle, do: "path", else: "gridline"}
       />
+      <%!-- The board goes on past the right side and the bottom of the view. --%>
+      <defs :if={@open}>
+        <linearGradient id="fade-right" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0" class={["fade-stop", !@castle && "wood"]} stop-opacity="0" />
+          <stop offset="1" class={["fade-stop", !@castle && "wood"]} stop-opacity="1" />
+        </linearGradient>
+        <linearGradient id="fade-bottom" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" class={["fade-stop", !@castle && "wood"]} stop-opacity="0" />
+          <stop offset="1" class={["fade-stop", !@castle && "wood"]} stop-opacity="1" />
+        </linearGradient>
+      </defs>
+      <g :if={@open} class="board-goes-on" aria-hidden="true">
+        <rect x="364" y="4" width="32" height="392" class="fade-right" />
+        <rect x="4" y="364" width="392" height="32" class="fade-bottom" />
+      </g>
+      <%= for {{row, col}, color} <- @fields do %>
+        <%= if @castle do %>
+          <g class={"field field-#{color}"} data-field={"#{row}-#{col}"}>
+            <rect
+              x={f(x(@pad, @cs, col) - @cs * 0.31)}
+              y={f(x(@pad, @cs, row) - @cs * 0.31)}
+              width={f(@cs * 0.62)}
+              height={f(@cs * 0.62)}
+              rx="5"
+              class="field-land"
+            />
+            <line
+              :for={o <- [-0.22, 0, 0.22]}
+              x1={f(x(@pad, @cs, col) + o * @cs * 0.62)}
+              y1={f(x(@pad, @cs, row) - @cs * 0.15)}
+              x2={f(x(@pad, @cs, col) + o * @cs * 0.62)}
+              y2={f(x(@pad, @cs, row) + @cs * 0.15)}
+              class="crop"
+            />
+          </g>
+        <% else %>
+          <rect
+            class={"field-mark field-#{color}"}
+            data-field={"#{row}-#{col}"}
+            x={f(x(@pad, @cs, col) - @cs * 0.12)}
+            y={f(x(@pad, @cs, row) - @cs * 0.12)}
+            width={f(@cs * 0.24)}
+            height={f(@cs * 0.24)}
+          />
+        <% end %>
+      <% end %>
       <circle
         :for={{row, col} <- @glow}
         class="glow"

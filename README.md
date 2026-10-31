@@ -68,11 +68,49 @@ The tests include:
   (`test/support/reference_solver.ex`) that tries all legal moves: on
   1000 random 5x5 positions, and on the puzzles of the bank,
 - the checks of the generator, and a check of each puzzle in the bank,
+- the path (the skip and the reviews), and the story games: each moment
+  passes the puzzle checks, and each story plays from the start to the
+  score, with the correct moves and with a wrong move at each moment,
 - LiveView tests with real taps and clicks for each puzzle flow: the
   correct line, the typical wrong moves and their explanations, "Show the
   better move", "Watch again", "Go back one move", "Try again", the hints
   and the stars, "Show the answer", "Next puzzle", and taps on occupied
   points, on illegal points and during the turn of Red.
+
+## The path through the puzzles
+
+The plan is in [`docs/plans/puzzle-path.md`](docs/plans/puzzle-path.md).
+
+- **The skip.** The puzzles of a world are grouped by their idea (the
+  template: capture in 1, edge chase, ladder, net, and so on). The first
+  puzzle of an idea is a test. When the player solves it on the first try
+  with no help, the path skips the other puzzles of the idea. After help
+  or a failure, the next puzzle is of the same idea. The world page
+  (`/worlds/capture`, `/worlds/escape`) shows all puzzles, and a skipped
+  puzzle as "Skipped. You know this one."
+- **The mix.** When 2 ideas or more are finished, each 4th puzzle is a
+  review of an earlier idea. A review shows only its goal as its title,
+  so that the player reads the board before he knows the idea.
+- **Story games.** A story is one 9x9 game. Each puzzle of the story is a
+  moment of the game. Between the moments, the game goes on with its own
+  moves, and at the end the page shows the score. The board shows a
+  corner (5x5, then 7x7, then 9x9) that grows with the game. The story is
+  the main path on the home page: "Continue the story".
+
+## Make the story games
+
+```sh
+mix go.gen.stories
+```
+
+The computer plays 9x9 games against itself (`Go.SelfPlay`). The task
+scans each game for moments: positions where a capture or an escape
+puzzle passes the normal puzzle checks, and the move of the game is its
+answer. It keeps a game with 5 moments or more, until it has 3 stories,
+makes the book of each moment, and writes `priv/puzzles/stories.json`.
+A story must also start in the 5x5 corner, end on the full board, and
+end with stones of both sides on the board and a win for Blue. It takes
+about 5 minutes on 4 cores.
 
 ## Make the puzzle bank
 

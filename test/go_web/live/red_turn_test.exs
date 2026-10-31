@@ -10,10 +10,12 @@ defmodule GoWeb.RedTurnTest do
   setup %{conn: conn} do
     Application.put_env(:go, :red_delay, @delay)
     Application.put_env(:go, :watch_delay, @delay)
+    Application.put_env(:go, :story_delay, @delay)
 
     on_exit(fn ->
       Application.put_env(:go, :red_delay, 0)
       Application.put_env(:go, :watch_delay, 0)
+      Application.put_env(:go, :story_delay, 0)
     end)
 
     {conn, _player} = new_player(conn)
@@ -88,5 +90,15 @@ defmodule GoWeb.RedTurnTest do
     assert text(html, "#message") == "Watch the answer."
     html = eventually(view, &(text(&1, "#fb-title") == "Now you know it"), 80)
     assert stone(html, {0, 3}) == nil
+  end
+
+  test "the first moves of a story play on the board, and Skip goes to the first moment", %{
+    conn: conn
+  } do
+    {:ok, view, html} = live(conn, ~p"/story")
+    assert text(html, "#title") == "The game starts"
+    assert text(html, "#message") == "Watch the game…"
+    html = click(view, "skip")
+    assert text(html, "#kicker") =~ "Moment 1 of"
   end
 end

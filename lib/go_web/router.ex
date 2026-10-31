@@ -21,6 +21,8 @@ defmodule GoWeb.Router do
     live_session :default, session: {GoWeb.Player, :session, []} do
       live "/", HomeLive
       live "/play/:world", PuzzleLive
+      live "/worlds/:world", WorldLive
+      live "/story", PuzzleLive, :story
     end
   end
 

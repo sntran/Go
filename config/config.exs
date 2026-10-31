@@ -10,9 +10,9 @@ import Config
 config :go,
   generators: [timestamp_type: :utc_datetime]
 
-# The time (in milliseconds) between the moves that Red plays, and
-# between the moves of "Watch again".
-config :go, red_delay: 700, watch_delay: 900
+# The time (in milliseconds) between the moves that Red plays, between
+# the moves of "Watch again", and between the moves of a story game.
+config :go, red_delay: 700, watch_delay: 900, story_delay: 500
 
 # The time limit (in milliseconds) of a deep search during play. When the
 # time is over, a fast search in the move limit decides (see Go.Think).

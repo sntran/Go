@@ -21,7 +21,7 @@ defmodule GoWeb.PuzzleLiveTest do
   describe "home" do
     test "shows the worlds, and the capture world opens", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/")
-      assert html =~ "Choose a world"
+      assert html =~ "Continue the story" or html =~ "Start the story"
       assert html =~ "Capture"
       assert html =~ "Escape"
       assert html =~ "Soon"
@@ -247,14 +247,13 @@ defmodule GoWeb.PuzzleLiveTest do
   end
 
   describe "Next puzzle" do
-    test "goes to the next puzzle of the world", %{conn: conn} do
+    test "goes to the next puzzle of the path", %{conn: conn, player: player} do
       {view, _html} = open(conn, "capture-01")
       tap_point(view, {2, 3})
       click(view, "next")
-      [first, second | _] = Puzzles.world(:capture)
-      assert first.id == "capture-01"
-      assert_patch(view, ~p"/play/capture?id=#{second.id}")
-      assert text(render(view), "#title") == second.title
+      {next, :new} = Go.Path.next(:capture, Progress.results(player), 0, Date.utc_today())
+      assert_patch(view, ~p"/play/capture?id=#{next.id}")
+      assert text(render(view), "#title") == next.title
     end
 
     test "the first open puzzle skips solved ones", %{conn: conn} do
@@ -272,7 +271,7 @@ defmodule GoWeb.PuzzleLiveTest do
       end
 
       {:ok, _view, html} = live(conn, ~p"/play/escape")
-      assert html =~ "You solved every puzzle in this world!"
+      assert html =~ "You finished the path of this world!"
       assert text(html, "#home") == "Choose a world"
     end
   end

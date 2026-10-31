@@ -45,6 +45,25 @@ defmodule Go.Progress do
   @doc "The attempts of a player, the newest first."
   def attempts(player), do: get(player, :attempts, [])
 
+  @doc """
+  The number of puzzles of `world` since the last review (see `Go.Path`).
+  """
+  def since_review(player, world), do: get(player, {:since_review, world}, 0)
+
+  @doc "Counts a finished puzzle of the path: a new one, or a review."
+  def count_path(player, world, :review), do: put(player, {:since_review, world}, 0)
+
+  def count_path(player, world, :new),
+    do: put(player, {:since_review, world}, since_review(player, world) + 1)
+
+  @doc """
+  The place of a player in the stories: `%{story: id, moment: n}` (the
+  moment from 1), or nil before the first story.
+  """
+  def story(player), do: get(player, :story, nil)
+
+  def put_story(player, place), do: put(player, :story, place)
+
   @doc "The look of a player: `:castle` or `:board`."
   def look(player), do: get(player, :look, :castle)
 
@@ -98,7 +117,9 @@ defmodule Go.Progress do
     end
   end
 
-  defp update(results, _id, :failed, _stars, _today), do: results
+  # A failure leaves a mark, so that the path goes to the next puzzle.
+  defp update(results, id, :failed, _stars, _today),
+    do: Map.put_new(results, id, %{status: :tried})
 
   defp get(player, key, default) do
     case :ets.lookup(@table, {player, key}) do

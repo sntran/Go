@@ -27,7 +27,28 @@ defmodule GoWeb.HomeLive do
         }
       end
 
-    {:ok, assign(socket, worlds: worlds, page_title: "Choose a world")}
+    {:ok, assign(socket, worlds: worlds, story: story_place(player), page_title: "Tower Go")}
+  end
+
+  # The place of the player in the stories, for the main button.
+  defp story_place(player) do
+    stories = Go.Stories.all()
+
+    case Progress.story(player) do
+      nil ->
+        %{label: "Start the story", where: hd(stories).title}
+
+      %{story: id, moment: :end} ->
+        %{label: "Continue the story", where: "#{Go.Stories.get(id).title}: the end of the game"}
+
+      %{story: id, moment: k} ->
+        story = Go.Stories.get(id)
+
+        %{
+          label: "Continue the story",
+          where: "#{story.title} · Moment #{k} of #{length(story.moments)}"
+        }
+    end
   end
 
   @impl true
@@ -36,11 +57,18 @@ defmodule GoWeb.HomeLive do
     <Layouts.app flash={@flash}>
       <main class="home">
         <section class="intro">
-          <h1>Choose a world</h1>
+          <h1>Play a real game, one moment at a time</h1>
           <p class="say">
-            You are Blue. Red is the computer. Build towers, close roads, and save your forts.
-            Each world teaches one idea of the game of Go.
+            You are Blue. Red is the computer. A story is one full game of Go. At each key moment, it is your turn to find the best move.
           </p>
+          <div class="story-start">
+            <.link navigate={~p"/story"} class="pill primary" id="story">{@story.label}</.link>
+            <span class="story-where">{@story.where}</span>
+          </div>
+        </section>
+        <section class="intro">
+          <h2>Worlds</h2>
+          <p class="say">Each world teaches one idea of the game of Go.</p>
         </section>
         <ul class="worlds">
           <li :for={w <- @worlds} class={["world", !w.open && "soon"]}>
@@ -52,6 +80,9 @@ defmodule GoWeb.HomeLive do
                   {w.solved} of {w.total} solved
                   <span :if={w.stars > 0} class="stars" aria-label={"#{w.stars} stars"}>★ {w.stars}</span>
                 </span>
+              </.link>
+              <.link navigate={~p"/worlds/#{w.id}"} class="world-all" id={"world-all-#{w.id}"}>
+                See all puzzles
               </.link>
             <% else %>
               <div class="world-link" aria-disabled="true">

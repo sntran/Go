@@ -110,7 +110,7 @@
   --grass: #E3EFD3; --path: #B9D19A; --wood: #DDB06D; --woodline: #6B4F2A;
   --blue: #378ADD; --blue-d: #185FA5; --red: #D85A30; --red-d: #993C1D;
   --black: #2C2C2A; --white: #F4F2EA; --whiteline: #7C7A72;
-  --accent: #2F45A8; --accent-fg: #FFFFFF; --good: #22744A; --bad: #B0392A;
+  --crop: #3B6D11; --accent: #2F45A8; --accent-fg: #FFFFFF; --good: #22744A; --bad: #B0392A;
   --warn-bg: #FBE6AE; --warn: #B57C0E; --alarm: #E24B4A; --door: #2C2C2A; --star: #E0A100;
   --display: 'Baloo 2', ui-rounded, 'Arial Rounded MT Bold', system-ui, sans-serif;
   --body: 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -118,14 +118,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #111813; --fg: #E4ECE4; --muted: #9AAB9E; --panel: #18211B; --rule: #2C3A30;
-    --grass: #22301C; --path: #3E5530; --accent: #94A3F5; --accent-fg: #111813;
+    --grass: #22301C; --path: #3E5530; --crop: #97C459; --accent: #94A3F5; --accent-fg: #111813;
     --good: #6FCB95; --bad: #F2907F; --warn-bg: #4A3A10; --warn: #E8B946; --star: #F2C94C;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #111813; --fg: #E4ECE4; --muted: #9AAB9E; --panel: #18211B; --rule: #2C3A30;
-  --grass: #22301C; --path: #3E5530; --accent: #94A3F5; --accent-fg: #111813;
+  --grass: #22301C; --path: #3E5530; --crop: #97C459; --accent: #94A3F5; --accent-fg: #111813;
   --good: #6FCB95; --bad: #F2907F; --warn-bg: #4A3A10; --warn: #E8B946; --star: #F2C94C;
   color-scheme: dark;
 }
@@ -239,3 +239,32 @@ a.world-link:hover { border-color: var(--accent); }
 .world-about { color: var(--muted); }
 .world-progress { font-weight: 700; }
 .world.soon .world-link { opacity: .55; }
+
+/* The world page. */
+.idea h2 { font-family: var(--display); font-weight: 700; font-size: 1.3rem; margin: 0 0 6px; }
+.puzzle-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.puzzle-item a { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 10px 14px; border-radius: 12px; border: 2px solid var(--rule); background: var(--panel); color: var(--fg); text-decoration: none; }
+.puzzle-item a:hover { border-color: var(--accent); }
+.puzzle-status-text { color: var(--muted); }
+.status-solved .puzzle-status-text { color: var(--star); font-weight: 700; }
+.status-skipped a { opacity: .75; }
+
+/* A view of a corner of the board: the board goes on past the open sides. */
+.fade-stop { stop-color: var(--grass); }
+.fade-stop.wood { stop-color: var(--wood); }
+.board-goes-on .fade-right { fill: url(#fade-right); }
+.board-goes-on .fade-bottom { fill: url(#fade-bottom); }
+/* The fields at the end of a game. */
+.field-blue .field-land { fill: var(--blue); opacity: .25; }
+.field-red .field-land { fill: var(--red); opacity: .25; }
+.field .crop { stroke: var(--crop); stroke-width: 2.2; stroke-linecap: round; }
+.field-mark.field-blue { fill: var(--black); stroke: var(--black); }
+.field-mark.field-red { fill: var(--white); stroke: var(--whiteline); }
+
+/* The story button of the home page. */
+.story-start { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.story-start .pill { font-size: 1.1rem; padding: 12px 22px; }
+.story-where { color: var(--muted); font-weight: 700; }
+.intro h2 { font-family: var(--display); font-weight: 700; font-size: 1.4rem; margin: 0; }
+.world { display: grid; gap: 4px; }
+.world-all { color: var(--accent); font-weight: 700; padding: 0 6px; }

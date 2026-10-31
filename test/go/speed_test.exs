@@ -1,7 +1,8 @@
 defmodule Go.SpeedTest do
   @moduledoc """
-  A tap must be fast: no server action may take more than 1 s. The first
-  taps use the book of the puzzle. A later tap searches with the time limit
+  A tap must be fast: no server action may take more than 1 s, for the
+  puzzles of the bank and for the moments of the stories. The first taps
+  use the book of the puzzle. A later tap searches with the time limit
   of the game (`:think_ms`, 700 ms).
 
   Not async: other tests on the same cores would change the times.
@@ -19,7 +20,8 @@ defmodule Go.SpeedTest do
     {div(us, 1000), result}
   end
 
-  for p <- Puzzles.all() do
+  # The puzzles of the bank and the moments of the stories.
+  for p <- Puzzles.all() ++ for(s <- Go.Stories.all(), m <- s.moments, do: m.puzzle) do
     @p p
     @tag timeout: :infinity
     test "#{p.id}: each server action takes less than 1 s" do
