@@ -243,7 +243,7 @@ NIF. These files do the deploy:
 | `package.json` | The dev dependencies `beam.com` and `wrangler`, and the scripts `build` and `deploy`. |
 | `scripts/app-com.sh` | The build: a release with no ERTS (`RELEASE_ERTS=false`), in one file `app.com`. |
 | `worker.js` | The entry of the Worker: `serve(app)` of the npm package `beam.com`. |
-| `wrangler.jsonc` | The Worker `tower-go`, with one Durable Object that runs the VM. |
+| `wrangler.jsonc` | The Worker `go`, with one Durable Object that runs the VM. |
 
 The Worker is stateful: one Durable Object runs one VM for all the
 requests, as LiveView needs. The Worker needs no secret: the VM makes
@@ -258,7 +258,7 @@ VM, so a new deploy, or an object that leaves the memory, clears it.
 2. Set the build command to `npm run build`, and the deploy command to
    `npm run deploy`.
 3. Save. Cloudflare builds and deploys the Worker at each push to
-   `main`. The address is `https://tower-go.<your subdomain>.workers.dev`.
+   `main`. The address is `https://go.<your subdomain>.workers.dev`.
 
 ### Deploy from your computer
 

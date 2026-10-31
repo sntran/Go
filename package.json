@@ -1,5 +1,5 @@
 {
-  "name": "tower-go",
+  "name": "go",
   "private": true,
   "scripts": {
     "build": "sh scripts/app-com.sh",

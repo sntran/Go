@@ -3,7 +3,7 @@
 // SECRET_KEY_BASE one time and keeps it in the storage of the Durable
 // Object, and PHX_HOST is the host of the first request.
 {
-  "name": "tower-go",
+  "name": "go",
   "main": "worker.js",
   "compatibility_date": "2026-09-01",
   // The VM of the Durable Object serves all its requests.
