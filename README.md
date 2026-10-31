@@ -231,10 +231,43 @@ Each attempt is stored with the puzzle id, the list of moves, the result
 and the stars. Before the server counts a result, it plays the moves again
 with the rules engine. The attempts stay in memory for now.
 
-## Deploy
+## Deploy to Cloudflare Workers
 
-The app does not use a database or NIFs that beam.com does not have, so it
-can run on Cloudflare Workers with
-[BEAM.com](https://github.com/sntran/BEAM.com). See
-`examples/phoenix_demo` in that repository. The deploy is not part of this
-step.
+The app runs on Cloudflare Workers with
+[BEAM.com](https://github.com/sntran/BEAM.com), as
+`examples/phoenix_demo` of that repository. It uses no database and no
+NIF. These files do the deploy:
+
+| File | What |
+|---|---|
+| `package.json` | The dev dependencies `beam.com` and `wrangler`, and the scripts `build` and `deploy`. |
+| `scripts/app-com.sh` | The build: a release with no ERTS (`RELEASE_ERTS=false`), in one file `app.com`. |
+| `worker.js` | The entry of the Worker: `serve(app)` of the npm package `beam.com`. |
+| `wrangler.jsonc` | The Worker `tower-go`, with one Durable Object that runs the VM. |
+
+The Worker is stateful: one Durable Object runs one VM for all the
+requests, as LiveView needs. The Worker needs no secret: the VM makes
+`SECRET_KEY_BASE` one time and keeps it, and `PHX_HOST` is the host of the
+first request. The progress of the players stays in the memory of the
+VM, so a new deploy, or an object that leaves the memory, clears it.
+
+### Deploy at each push (Workers Builds)
+
+1. In the Cloudflare dashboard, open Workers & Pages, select Create, and
+   import the GitHub repository `sntran/Go`.
+2. Set the build command to `npm run build`, and the deploy command to
+   `npm run deploy`.
+3. Save. Cloudflare builds and deploys the Worker at each push to
+   `main`. The address is `https://tower-go.<your subdomain>.workers.dev`.
+
+### Deploy from your computer
+
+```sh
+npm install
+npm run build            # makes app.com (about 1 minute)
+npx wrangler login       # one time
+npm run deploy
+```
+
+To try the Worker on your computer first: `npx wrangler dev`, then open
+<http://localhost:8787>.

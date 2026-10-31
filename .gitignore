@@ -35,3 +35,8 @@ go-*.tar
 npm-debug.log
 /assets/node_modules/
 
+/node_modules/
+
+# The build of Cloudflare Workers (npm run build, wrangler).
+/app.com
+/.wrangler/
