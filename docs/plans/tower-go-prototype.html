@@ -1,0 +1,272 @@
+<title>Tower Go</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: one play column on phones; on wide screens the lesson text sits left and the board right */
+:root{--bg:#F2F4EE;--fg:#1F2A22;--muted:#58665C;--panel:#FFFFFF;--rule:#D5DDD2;
+--grass:#E3EFD3;--path:#B9D19A;--crop:#3B6D11;--wood:#DDB06D;--woodline:#6B4F2A;
+--blue:#378ADD;--blue-d:#185FA5;--red:#D85A30;--red-d:#993C1D;--black:#2C2C2A;--white:#F4F2EA;--whiteline:#7C7A72;
+--accent:#2F45A8;--accent-fg:#FFFFFF;--good:#22744A;--bad:#B0392A;--warn-bg:#FBE6AE;--warn:#B57C0E;--alarm:#E24B4A;--door:#2C2C2A;
+--display:'Baloo 2',ui-rounded,'Arial Rounded MT Bold',system-ui,sans-serif;--body:'Atkinson Hyperlegible',system-ui,-apple-system,'Segoe UI',sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111813;--fg:#E4ECE4;--muted:#9AAB9E;--panel:#18211B;--rule:#2C3A30;--grass:#22301C;--path:#3E5530;--crop:#97C459;--accent:#94A3F5;--accent-fg:#111813;--good:#6FCB95;--bad:#F2907F;--warn-bg:#4A3A10;--warn:#E8B946;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#111813;--fg:#E4ECE4;--muted:#9AAB9E;--panel:#18211B;--rule:#2C3A30;--grass:#22301C;--path:#3E5530;--crop:#97C459;--accent:#94A3F5;--accent-fg:#111813;--good:#6FCB95;--bad:#F2907F;--warn-bg:#4A3A10;--warn:#E8B946;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.55;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1020px;margin:0 auto;display:grid;gap:22px}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px}
+.brand{display:flex;align-items:center;gap:10px}
+h1{font-family:var(--display);font-weight:700;font-size:2.1rem;margin:0;line-height:1}
+.steps{display:flex;flex-wrap:wrap;gap:6px}
+.step{width:36px;height:36px;border-radius:50%;border:2px solid var(--rule);background:var(--panel);color:var(--muted);font:700 14px var(--body);cursor:pointer;padding:0}
+.step.done{background:var(--blue);border-color:var(--blue);color:#fff}
+.step.cur{border-color:var(--accent);color:var(--accent);background:var(--panel)}
+.main{display:grid;gap:22px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.main{grid-template-columns:minmax(0,1fr) minmax(0,480px);align-items:start}}
+.lesson{display:grid;gap:12px;min-width:0;align-content:start}
+.kicker{font:700 12px var(--body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0}
+h2{font-family:var(--display);font-weight:700;font-size:1.75rem;margin:0;line-height:1.15;text-wrap:balance}
+.say{margin:0;max-width:60ch;font-size:1.06rem}
+.realgo{margin:0;max-width:60ch;font-size:.92rem;color:var(--muted);border-top:1px solid var(--rule);padding-top:12px}
+.realgo b{color:var(--fg)}
+.fb{display:grid;gap:6px;background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:14px 16px;max-width:60ch}
+.fb p{margin:0}.fb .t{font-family:var(--display);font-weight:700;font-size:1.25rem;line-height:1.2}
+.fb.bad .t{color:var(--bad)}.fb.good .t{color:var(--good)}
+.fb b{font-weight:700}
+.play{display:grid;gap:12px;min-width:0}
+.msg{margin:0;font-weight:700;min-height:1.6em;color:var(--muted)}
+svg#b{width:100%;max-width:480px;aspect-ratio:1;display:block;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{font:700 15px var(--body);padding:10px 16px;border-radius:999px;border:2px solid var(--rule);background:var(--panel);color:var(--fg);cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.small{font-size:14px;padding:8px 13px}
+.btn:focus-visible,.step:focus-visible,.seg button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.seg{display:inline-flex;flex-wrap:wrap;border:2px solid var(--rule);border-radius:18px;overflow:hidden}
+.seg button{font:700 14px var(--body);padding:8px 12px;border:0;background:var(--panel);color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.score{display:flex;gap:18px;font-variant-numeric:tabular-nums;font-weight:700;font-size:1.05rem}
+.score .t{color:var(--blue)}.score .k{color:var(--red)}
+@keyframes wob{0%,100%{transform:rotate(0)}25%{transform:rotate(-5deg)}75%{transform:rotate(5deg)}}
+.danger{animation:wob .6s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+@keyframes crumble{0%{transform:none;opacity:1}50%{transform:translateY(3px) rotate(10deg) scaleY(.7);opacity:.9}100%{transform:translateY(8px) rotate(18deg) scaleY(.15);opacity:0}}
+.fall{animation:crumble .9s ease-in forwards;transform-box:fill-box;transform-origin:50% 100%}
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:.95}}
+.hint{animation:pulse .9s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.danger,.hint{animation:none}.fall{animation:none;opacity:0}}
+</style>
+<div class="wrap">
+<header>
+<div class="brand">
+<svg width="48" height="34" viewBox="0 0 48 34" aria-hidden="true"><rect x="3" y="12" width="16" height="18" rx="1.5" style="fill:var(--blue);stroke:var(--blue-d);stroke-width:1.5"/><rect x="3" y="7" width="4.5" height="5" style="fill:var(--blue);stroke:var(--blue-d);stroke-width:1.5"/><rect x="8.8" y="7" width="4.5" height="5" style="fill:var(--blue);stroke:var(--blue-d);stroke-width:1.5"/><rect x="14.5" y="7" width="4.5" height="5" style="fill:var(--blue);stroke:var(--blue-d);stroke-width:1.5"/><path d="M8 30v-6a3 3 0 0 1 6 0v6z" style="fill:var(--door)"/><rect x="28" y="12" width="16" height="18" rx="1.5" style="fill:var(--red);stroke:var(--red-d);stroke-width:1.5"/><rect x="28" y="7" width="4.5" height="5" style="fill:var(--red);stroke:var(--red-d);stroke-width:1.5"/><rect x="33.8" y="7" width="4.5" height="5" style="fill:var(--red);stroke:var(--red-d);stroke-width:1.5"/><rect x="39.5" y="7" width="4.5" height="5" style="fill:var(--red);stroke:var(--red-d);stroke-width:1.5"/><path d="M33 30v-6a3 3 0 0 1 6 0v6z" style="fill:var(--door)"/></svg>
+<h1>Tower Go</h1>
+</div>
+<nav class="steps" id="steps" aria-label="Lessons"></nav>
+</header>
+<main class="main">
+<section class="lesson">
+<p class="kicker" id="kick"></p>
+<h2 id="ttl"></h2>
+<p class="say" id="say"></p>
+<div class="fb" id="fb" hidden aria-live="polite">
+<p class="t" id="fbt"></p><p id="fbw"></p><p id="fby"></p><p id="fbb"></p>
+<div class="row" id="fbrow"><button type="button" class="btn small" id="watch">Watch again</button><button type="button" class="btn small" id="showbetter">Show the better move</button><button type="button" class="btn small" id="back">Go back one move</button></div>
+</div>
+<p class="realgo" id="realgo"></p>
+</section>
+<section class="play">
+<div class="row" id="lvlrow"><span class="kicker">Play against</span><div class="seg" id="lvl"><button type="button" id="lv-easy" data-lv="easy">Easy</button><button type="button" id="lv-medium" data-lv="medium">Medium</button><button type="button" id="lv-hard" data-lv="hard">Hard</button><button type="button" id="lv-two" data-lv="two">A friend</button></div></div>
+<div class="row"><span class="kicker">Look</span><div class="seg" id="view"><button type="button" id="vw-castle" data-vw="castle">Castles</button><button type="button" id="vw-stone" data-vw="stone">Real Go board</button></div></div>
+<div class="score" id="score"></div>
+<p class="msg" id="msg" aria-live="polite"></p>
+<svg id="b" viewBox="0 0 400 400" role="img" aria-label="Game board"></svg>
+<div class="row">
+<button type="button" class="btn" id="hint">Hint</button>
+<button type="button" class="btn" id="undo">Go back one move</button>
+<button type="button" class="btn" id="pass">Pass</button>
+<button type="button" class="btn" id="retry">Start over</button>
+<button type="button" class="btn primary" id="next">Next lesson</button>
+</div>
+</section>
+</main>
+</div>
+<script>
+function mkGame(N,komi){const nb=[],dg=[];for(let i=0;i<N*N;i++){const r=(i/N)|0,c=i%N,o=[],d=[];if(r>0)o.push(i-N);if(r<N-1)o.push(i+N);if(c>0)o.push(i-1);if(c<N-1)o.push(i+1);for(const[a,b]of[[-1,-1],[-1,1],[1,-1],[1,1]]){const rr=r+a,cc=c+b;if(rr>=0&&rr<N&&cc>=0&&cc<N)d.push(rr*N+cc)}nb.push(o);dg.push(d)}return{N,nb,dg,b:new Int8Array(N*N),ko:-1,turn:1,passes:0,komi:komi||0,last:-1,over:false}}
+function clone(g){return{N:g.N,nb:g.nb,dg:g.dg,b:g.b.slice(),ko:g.ko,turn:g.turn,passes:g.passes,komi:g.komi,last:g.last,over:g.over}}
+const SM=new Int32Array(512),LM=new Int32Array(512);let stp=0;
+function grpInfo(g,i){stp++;const col=g.b[i],st=[i];SM[i]=stp;let libs=0;for(let k=0;k<st.length;k++){const ns=g.nb[st[k]];for(let j=0;j<ns.length;j++){const m=ns[j],v=g.b[m];if(v===0){if(LM[m]!==stp){LM[m]=stp;libs++}}else if(v===col&&SM[m]!==stp){SM[m]=stp;st.push(m)}}}return{st,libs}}
+function play(g,i){const c=g.turn;if(i<0){g.passes++;g.ko=-1;g.turn=3-c;g.last=-1;if(g.passes>=2)g.over=true;return{ok:true,cap:[]}}
+if(g.b[i]!==0)return{ok:false,why:'full'};if(i===g.ko)return{ok:false,why:'ko'};
+g.b[i]=c;const cap=[];for(const m of g.nb[i])if(g.b[m]===3-c){const gi=grpInfo(g,m);if(gi.libs===0)for(const s of gi.st){g.b[s]=0;cap.push(s)}}
+const me=grpInfo(g,i);if(me.libs===0){g.b[i]=0;return{ok:false,why:'noair'}}
+g.ko=(cap.length===1&&me.st.length===1&&me.libs===1)?cap[0]:-1;g.passes=0;g.turn=3-c;g.last=i;return{ok:true,cap}}
+function isEye(g,i,c){for(const m of g.nb[i])if(g.b[m]!==c)return false;let bad=0;for(const d of g.dg[i])if(g.b[d]===3-c)bad++;return g.dg[i].length===4?bad<2:bad===0}
+function score(g){const n=g.b.length,own=new Int8Array(n),seen=new Uint8Array(n);let t=0,k=0;
+for(let i=0;i<n;i++){const v=g.b[i];if(v){own[i]=v;v===1?t++:k++;continue}if(seen[i])continue;const reg=[i];seen[i]=1;let a=false,b=false;
+for(let q=0;q<reg.length;q++)for(const m of g.nb[reg[q]]){const w=g.b[m];if(w===1)a=true;else if(w===2)b=true;else if(!seen[m]){seen[m]=1;reg.push(m)}}
+const o=a&&!b?1:b&&!a?2:0;for(const r of reg){own[r]=o?o+2:0;if(o===1)t++;else if(o===2)k++}}
+return{t,k:k+g.komi,own}}
+function winnerOf(g){const s=score(g);return s.t>s.k?1:2}
+const EMP=new Int16Array(512);
+function playout(g,mode){const n=g.b.length,max=n*3;let moves=0;
+while(!g.over&&moves<max){let c=0;for(let i=0;i<n;i++)if(g.b[i]===0)EMP[c++]=i;let done=false;
+while(c>0){const k=(Math.random()*c)|0,i=EMP[k];EMP[k]=EMP[--c];if(isEye(g,i,g.turn))continue;const mover=g.turn,r=play(g,i);if(r.ok){if(mode==='capture'&&r.cap.length)return mover;done=true;break}}
+if(!done)play(g,-1);moves++}
+if(mode==='capture')return 0;return winnerOf(g)}
+function legalMoves(g,mode){const out=[];for(let i=0;i<g.b.length;i++){if(g.b[i]||i===g.ko||isEye(g,i,g.turn))continue;const h=clone(g);if(play(h,i).ok)out.push(i)}if(mode==='area')out.push(-1);return out}
+function think(g,mode,iters){const root={mv:null,p:null,ch:[],un:legalMoves(g,mode),n:0,w:0,pl:3-g.turn,term:0};
+if(!root.un.length)return -1;if(root.un.length===1)return root.un[0];
+for(let it=0;it<iters;it++){let node=root;const h=clone(g);
+while(!node.un.length&&node.ch.length){let best=null,bv=-1;const ln=Math.log(node.n);for(const ch of node.ch){const v=ch.w/ch.n+1.0*Math.sqrt(ln/ch.n);if(v>bv){bv=v;best=ch}}node=best;play(h,node.mv)}
+if(node.un.length&&!node.term&&!h.over){const k=(Math.random()*node.un.length)|0,mv=node.un.splice(k,1)[0],mover=h.turn,r=play(h,mv);const term=mode==='capture'&&r.cap.length?mover:0;
+const child={mv,p:node,ch:[],un:term||h.over?[]:legalMoves(h,mode),n:0,w:0,pl:mover,term};node.ch.push(child);node=child}
+const win=node.term?node.term:h.over?winnerOf(h):playout(h,mode);
+for(let x=node;x;x=x.p){x.n++;if(win===x.pl)x.w++;else if(win===0)x.w+=.5}}
+let best=null;for(const ch of root.ch)if(!best||ch.n>best.n)best=ch;return best?best.mv:-1}
+
+const T=1,K=2;
+const LS=[
+{ttl:'Surround a tower',kind:'catch',N:5,t:[],k:[12],say:'Every tower needs open roads: the empty spots right next to it, up, down, left and right. The dashed rings show Red’s 4 roads. Build your towers on all of them. A tower with no open road falls.',real:'Towers are <b>stones</b>, and open roads are called <b>liberties</b>. Taking away a stone’s last liberty <b>captures</b> it.',win:c=>({t:'Red’s tower fell!',y:'You blocked all 4 of its roads, one tower at a time.'})},
+{ttl:'Corners and edges',kind:'catch',N:5,t:[],k:[0,14],say:'Here are two red towers. One stands in the corner, one on the edge. Count their roads. Which one falls faster?',real:'A stone in the corner has only 2 liberties, and a stone on the edge has 3. That makes corners and edges dangerous.',win:c=>c.includes(0)?{t:'Right, the corner tower fell!',y:'It had only 2 roads. The board edge blocks roads for free, so towers in corners and on edges are easier to surround.'}:{t:'The edge tower fell.',y:'It had 3 roads. The corner tower had only 2, so it would have fallen even faster. Try it: tap Start over.'}},
+{ttl:'Break the siege',kind:'save',N:5,t:[12],k:[7,11,13],say:'Now your blue tower is under siege. It has only 1 open road left, so it shakes. Red will close that road next turn. Build on the last road so your tower gets more.',real:'A stone with only one liberty left is in <b>atari</b>. Go players say “atari” the way chess players say “check”.'},
+{ttl:'Build a wall',kind:'join',N:5,t:[11,13],k:[7,17],say:'Towers that touch, up, down, left or right, join into one fort and share all their roads. Red wants to build between your two towers and split them. Join them first!',real:'Touching stones are <b>connected</b> and share liberties. Stones that touch only corner to corner are not connected.'},
+{ttl:'Siege game',kind:'capgame',N:5,t:[],k:[],say:'Now play a whole game. Take turns building. The first one to make a tower fall wins. Watch for shaking forts, yours and Red’s.',real:'This first-capture game is how many Go teachers start. Real Go goes further, and the next lessons show how.'},
+{ttl:'Two courtyards',kind:'eyes',N:5,t:[3,5,6,7,8],k:[4,9,10,11,12,13,14],say:'Your fort has a yard with 3 empty spots, and Red is all around. Red can sneak into your yard and fill it up. Split the yard into two separate courtyards. Red can never build in either one, because a tower there would have no road.',real:'Each courtyard is called an <b>eye</b>. A group with two eyes can never be captured. This is one of the most important ideas in Go.'},
+{ttl:'No instant take-back',kind:'ko',N:5,t:[2,3,8,12],k:[1,5,7,11],ko:6,say:'Red just took one of your towers. The crossed spot is where it stood. You could take Red’s tower right back from there, but not yet: if you both kept taking back, the game would never end. Build somewhere else first, then take it back.',real:'This rule is called <b>ko</b>. When one stone is taken back and forth, you must wait one turn before you take back.'},
+{ttl:'Claim fields',kind:'land',N:5,t:[2,7,17,22],k:[3,8,13,18,23],say:'Real Go is not about making towers fall. It is about land. Empty spots that only your towers surround are your fields. Your wall has a gap. Close it before Red gets in!',real:'Fields are called <b>territory</b>. Your score is your stones plus your territory.'},
+{ttl:'Real battle',kind:'real',N:7,t:[],k:[],say:'Now play real Go on a bigger board. Build walls to claim fields, and make Red’s towers fall if they come into your land. When nothing useful is left, tap Pass. When you both pass, the game ends. Score is towers plus fields. Red gets half a point for going second.',real:'Before you pass, make any red towers stuck inside your fields fall. Towers still standing at the end count for their side and break up the fields around them.'},
+{ttl:'A real Go board',kind:'real',N:7,t:[],k:[],view:'stone',say:'Same game, now on a real Go board. Your towers are black stones and Red’s towers are white stones. Everything you learned works the same way. You can switch back to castles any time.',real:'This is how Go looks all over the world. Black always plays first. You can now play Go with anyone.'}
+];
+const SAVE='towergo-v1';
+let g,li=0,state='play',hint=false,falls=[],aiLast=-2,busy=false,phase=0,lvl='easy',view='castle',hist=[],lastTurn=null,replaying=false,fbData=null,showBetter=false,kidMark=-1;const done=new Set();
+const $=id=>document.getElementById(id);const later=(f,ms)=>setTimeout(f,ms);
+function store(){try{localStorage.setItem(SAVE,JSON.stringify({li,done:[...done],lvl}))}catch(e){}}
+function grpFull(i){const col=g.b[i],s=[i],seen=new Set([i]),libs=new Set();while(s.length){const k=s.pop();for(const m of g.nb[k]){const v=g.b[m];if(v===0)libs.add(m);else if(v===col&&!seen.has(m)){seen.add(m);s.push(m)}}}return{st:[...seen],libs}}
+function groupsOf(c){const seen=new Set(),out=[];for(let i=0;i<g.b.length;i++)if(g.b[i]===c&&!seen.has(i)){const x=grpFull(i);x.st.forEach(k=>seen.add(k));out.push(x)}return out}
+function legalFor(i,c){if(g.b[i])return false;const h=clone(g);h.turn=c;return play(h,i).ok}
+function hasMove(c){for(let i=0;i<g.b.length;i++)if(legalFor(i,c))return true;return false}
+function eyeCount(){const gs=groupsOf(T);if(!gs.length)return 0;const big=gs.sort((a,b)=>b.st.length-a.st.length)[0];let n=0;for(const l of big.libs){const h=clone(g);h.turn=K;if(!play(h,l).ok)n++}return n}
+function landOf(c){const s=score(g);let n=0;for(const o of s.own)if(o===c+2)n++;return n}
+function isDiag(i,c){const N=g.N,r=(i/N)|0,cc=i%N;for(const[a,b]of[[-1,-1],[-1,1],[1,-1],[1,1]]){const rr=r+a,c2=cc+b;if(rr>=0&&rr<N&&c2>=0&&c2<N&&g.b[rr*N+c2]===c)return true}return false}
+function touches(i,c){return g.nb[i].some(m=>g.b[m]===c)}
+function snap(){return{g:clone(g),state,phase,aiLast,fbData,msg:$('msg').textContent}}
+function restore(s){g=clone(s.g);state=s.state;phase=s.phase;aiLast=s.aiLast;fbData=s.fbData;$('msg').textContent=s.msg;falls=[];hint=false;showBetter=false;kidMark=-1}
+function setMsg(t){$('msg').textContent=t}
+function setFb(o){fbData=o;showBetter=false}
+function renderFb(){const f=fbData,el=$('fb');if(!f){el.hidden=true;return}el.hidden=false;el.className='fb '+f.tone;$('fbt').textContent=f.t;
+const line=(id,lab,txt)=>{const p=$(id);p.hidden=!txt;p.innerHTML=txt?(lab?'<b>'+lab+'</b> ':'')+txt:''};line('fbw','What happened:',f.w);line('fby',f.tone==='bad'?'Why:':'',f.y);line('fbb','Better move:',f.b);
+$('watch').hidden=!(lastTurn&&f.turn);$('showbetter').hidden=!(f.spots&&f.spots.length);$('back').hidden=!(f.turn&&hist.length);$('fbrow').hidden=$('watch').hidden&&$('showbetter').hidden&&$('back').hidden}
+function go(n){li=n;const L=LS[n];g=mkGame(L.N,L.kind==='real'?0.5:0);L.t.forEach(i=>g.b[i]=T);L.k.forEach(i=>g.b[i]=K);g.turn=T;g.ko=L.ko!=null?L.ko:-1;
+state='play';hint=false;falls=[];aiLast=-2;busy=false;phase=0;hist=[];lastTurn=null;replaying=false;fbData=null;showBetter=false;kidMark=-1;view=L.view||'castle';
+$('kick').textContent='Lesson '+(n+1)+' of '+LS.length;$('ttl').textContent=L.ttl;$('say').textContent=L.say;$('realgo').innerHTML='<b>In real Go:</b> '+L.real;
+setMsg(isGame()?(lvl==='two'?'Blue goes first.':'You are Blue. You go first.'):'Tap a spot on the board.');store();draw()}
+function isGame(){const k=LS[li].kind;return k==='capgame'||k==='real'}
+function hintSpots(){const L=LS[li];
+if(L.kind==='catch'||L.kind==='capgame'){const gs=groupsOf(K).sort((a,b)=>a.libs.size-b.libs.size);return gs.length?[...gs[0].libs]:[]}
+if(L.kind==='save'){const x=groupsOf(T).find(x=>x.libs.size===1);return x?[...x.libs]:[]}
+if(L.kind==='join'){const gs=groupsOf(T);return gs.length<2?[]:[...gs[0].libs].filter(l=>gs[1].libs.has(l))}
+if(L.kind==='eyes'){const out=[];for(let i=0;i<g.b.length;i++){if(!legalFor(i,T))continue;const sv=g;g=clone(sv);g.turn=T;play(g,i);const ok=eyeCount()>=2;g=sv;if(ok)out.push(i)}return out}
+if(L.kind==='ko')return phase===1&&!g.b[L.ko]?[L.ko]:[];
+if(L.kind==='land'){const out=[];for(let i=0;i<g.b.length;i++){if(!legalFor(i,T))continue;const sv=g;g=clone(sv);g.turn=T;play(g,i);const ok=landOf(T)>=10;g=sv;if(ok)out.push(i)}return out}
+return[]}
+function win(f){state='won';done.add(li);setFb(Object.assign({tone:'good'},f));setMsg('');store();draw()}
+function lose(f){state='lost';setFb(Object.assign({tone:'bad',turn:true},f));setMsg('');draw()}
+function reply(spots,f){const s=spots.find(x=>legalFor(x,K));g.turn=K;if(s!==undefined){const r=play(g,s);aiLast=s;lastTurn.red=s;if(r.ok&&r.cap.length)falls=r.cap.map(k=>({i:k,c:T}))}g.turn=T;lose(f)}
+function corner(){const pref=[24,20,23,21,19,15,22,16,18,17,4,9,14,10,0];for(const s of pref){if(s===LS[li].ko||!legalFor(s,K))continue;const h=clone(g);h.turn=K;if(play(h,s).cap.length)continue;return s}return -1}
+function savers(sg,stones,c){const out=[];for(let i=0;i<sg.b.length;i++){if(sg.b[i])continue;const h=clone(sg);h.turn=c;if(!play(h,i).ok)continue;const keep=stones.filter(x=>sg.b[x]===c);if(keep.length&&keep.every(x=>h.b[x]===c)&&grpInfo(h,keep[0]).libs>=2)out.push(i)}return out}
+function fallFb(cap,over){const sg=lastTurn.snap.g,c=lastTurn.color,kid=lastTurn.kid,n=cap.length;const was=cap.find(x=>sg.b[x]===c);const already=was!==undefined&&grpInfo(sg,was).libs===1;const spots=savers(sg,cap,c);
+const w='Red closed the last road of your fort, and '+(n===1?'1 tower':n+' towers')+' fell.';
+const y=already?'Before your move, that fort already had only 1 road left. It was shaking to warn you. Your move did not give it a new road.':cap.includes(kid)?'Your new tower joined a fort but left it with only 1 open road, so Red could close it.':'That fort had only 1 road left after your move.';
+const b=spots.length?'Build on '+(spots.length>1?'one of the glowing spots':'the glowing spot')+' to give that fort more roads. Tap “Show the better move”.':'That fort could not be saved anymore. Next time, help a fort earlier, while it still has 2 roads.';
+return{t:over?'Your fort fell, and Red wins':'Red made your towers fall',w,y,b,spots,tone:'bad',turn:true}}
+function tap(i){if(state!=='play'||busy||replaying||g.b[i])return;const L=LS[li],two=lvl==='two'&&isGame();
+if(isGame()&&!two&&g.turn!==T)return;
+const c=two?g.turn:T;falls=[];aiLast=-2;kidMark=-1;const before=hintSpots();hint=false;
+if(L.kind==='catch'&&!groupsOf(K).some(x=>x.libs.has(i))){setFb(isDiag(i,K)?{tone:'bad',t:'That doesn’t block a road',w:'You built corner to corner with a red tower.',y:'Roads only go up, down, left and right. A corner spot is not a road.',b:'Build on a spot with a dashed ring.',spots:before}:{tone:'bad',t:'Too far away',w:'That spot doesn’t touch a red tower.',y:'Only the spots right next to a tower are its roads. A tower far away doesn’t block anything.',b:'Build on a spot with a dashed ring.',spots:before});return draw()}
+const s0=snap();g.turn=c;const r=play(g,i);
+if(!r.ok){if(r.why==='ko')setFb({tone:'bad',t:'Not yet!',w:'Red just took your tower from this spot.',y:'If you could take back right away, you would both swap forever. So the rule says: wait one turn.',b:'Build somewhere else first. Then you may take back.'});
+else setFb({tone:'bad',t:'You can’t build there',w:'A tower on that spot would have no open road at all.',y:'A tower with no roads falls at once, so the rule doesn’t allow it. The only time you may build there is when it closes the last road of a red fort.'});return draw()}
+hist.push(s0);lastTurn={snap:s0,kid:i,color:c,red:null};kidMark=i;fbData=null;
+if(r.cap.length)falls=r.cap.map(k=>({i:k,c:3-c}));
+switch(L.kind){
+case 'catch':if(r.cap.length)return win(L.win(r.cap));g.turn=T;setMsg('Red’s roads left: '+groupsOf(K).map(x=>x.libs.size).join(' and '));return draw();
+case 'save':if(groupsOf(T).every(x=>x.libs.size>=2))return win({t:'Siege broken!',y:'Your two towers touch, so they became one fort with '+grpFull(i).libs.size+' roads. Red can only close one road per turn.'});
+return reply(before,{t:'Your tower fell',w:'You built away from your tower, and Red closed its last road.',y:isDiag(i,T)?'Your new tower touched only at a corner, so it did not join. Towers join only up, down, left or right.':'A new tower helps only if it touches your tower. Then they become one fort and share their roads.',b:'Build on the last open road. Your fort would then have 3 roads.',spots:before});
+case 'join':if(groupsOf(T).length===1)return win({t:'One strong fort!',y:'Joined, your towers share '+grpFull(i).libs.size+' roads. Split, each one would have only a few.'});
+return reply(before,{t:'Red split your towers',w:'Red built in the gap between your two towers.',y:'Two separate towers each have only their own few roads. Joined, they share all of them and are much harder to surround.',b:'Build in the gap that touches both towers. Your fort would then have 6 roads.',spots:before});
+case 'eyes':if(eyeCount()>=2)return win({t:'Two courtyards: safe forever!',y:'Red can’t build in either courtyard, because that tower would have no open road. And Red can’t fill both at once.'});
+return reply([1].concat(before),{t:'Red got into your yard',w:i===0||i===2?'You built inside your own yard, and Red built in the middle of it.':'You built outside, and Red built in the middle of your yard.',y:'Now your yard can never become two courtyards. Red can keep filling it, and in the end your fort falls.',b:'Build in the middle spot of your yard. That splits it into two courtyards that Red can never enter.',spots:before});
+case 'ko':if(r.cap.length&&i===L.ko)return win({t:'Taken back!',y:'You waited one turn, so now it is allowed. And now Red has to wait a turn too.'});
+{const s=corner();g.turn=K;if(s>=0){play(g,s);aiLast=s;lastTurn.red=s}g.turn=T;g.ko=-1}
+phase=1;setMsg('Red built somewhere else. Now you may take back! Tap the spot that was crossed out.');return draw();
+case 'land':{const n=landOf(T),sc=score(g);if(n>=10)return win({t:'Your fields are safe!',y:'Your wall is closed, so the '+n+' empty spots behind it are your fields. Score is towers plus fields: you have '+sc.t+', Red has '+sc.k+'.'})}
+return reply([12],{t:'Red got into your land',w:'Red built in the gap of your wall.',y:'Fields count only when your towers alone surround them. Now a red tower touches them, so they belong to nobody.',b:'Close the gap first. Then the 10 spots behind your wall are your fields.',spots:[12]});
+case 'capgame':if(r.cap.length)return two?win({t:(c===T?'Blue':'Red')+' wins!',y:'The other side’s fort had only 1 road left, and it got closed.'}):win({t:'You made Red’s tower fall!',y:'It had only 1 road left, and you closed it. You win!'});
+if(two){if(!hasMove(g.turn))return win({t:(c===T?'Blue':'Red')+' wins!',y:'The other side has no safe spot left to build.'});setMsg((g.turn===T?'Blue':'Red')+'’s turn.');return draw()}
+return computer('capture');
+case 'real':if(r.cap.length)setMsg((two?(c===T?'Blue':'Red'):'You')+' made '+r.cap.length+' tower'+(r.cap.length>1?'s':'')+' fall!');
+if(two){setMsg((g.turn===T?'Blue':'Red')+'’s turn.');return draw()}return computer('area')}}
+function easyCapMove(){let best=-1,bs=-1e9;const greedy=Math.random()<0.5;for(let i=0;i<g.b.length;i++){if(g.b[i])continue;const h=clone(g);h.turn=K;const r=play(h,i);if(!r.ok)continue;let s=Math.random()*12;if(r.cap.length)s+=greedy?1000:-50;if(grpInfo(h,i).libs===1)s-=500;if(s>bs){bs=s;best=i}}return best}
+function computer(mode){busy=true;g.turn=K;setMsg('Red is thinking…');draw();
+later(()=>{busy=false;
+if(mode==='capture'){const m=lvl==='easy'?easyCapMove():think(g,'capture',lvl==='medium'?300:2000);if(m<0)return win({t:'You win!',y:'Red has no safe spot left to build.'});const r=play(g,m);aiLast=m;if(lastTurn)lastTurn.red=m;
+if(r.cap.length){falls=r.cap.map(k=>({i:k,c:T}));state='lost';setFb(fallFb(r.cap,true));setMsg('');return draw()}
+if(!hasMove(T)){return lose({t:'No safe spot left',w:'Every empty spot would leave your tower with no road.',y:'When all your space fills up, you have nowhere to build.',b:'Keep some empty spots inside your own fort. Red can’t build there, but you can.'})}
+setMsg(groupsOf(T).some(x=>x.libs.size===1)?'Careful: one of your forts has only 1 road left!':'Your turn.');return draw()}
+const m=think(g,'area',{easy:25,medium:400,hard:3000}[lvl]);const r=play(g,m);aiLast=m;if(lastTurn)lastTurn.red=m;
+if(r.cap.length){falls=r.cap.map(k=>({i:k,c:T}));setFb(fallFb(r.cap,false))}
+if(g.over)return finish();
+setMsg(m<0?'Red passed. If you think the game is done, tap Pass too. If not, keep playing.':groupsOf(T).some(x=>x.libs.size===1)?'Careful: one of your forts has only 1 road left!':'Your turn.');draw()},60)}
+function finish(){const s=score(g),bt=g.b.filter(v=>v===T).length,bk=g.b.filter(v=>v===K).length,two=lvl==='two';
+const y='Blue: '+bt+' towers + '+(s.t-bt)+' fields = '+s.t+'. Red: '+bk+' towers + '+(s.k-bk-g.komi)+' fields + '+g.komi+' = '+s.k+'.';
+if(s.t>s.k)win({t:two?'Blue wins!':'You win!',y});else{state='lost';setFb({tone:two?'good':'bad',t:two?'Red wins!':'Red wins this time',y});setMsg('');if(two)done.add(li);draw()}}
+function pass(){if(state!=='play'||busy||replaying||LS[li].kind!=='real')return;const two=lvl==='two';if(!two&&g.turn!==T)return;falls=[];aiLast=-2;fbData=null;const sp=snap();hist.push(sp);lastTurn={snap:sp,kid:-1,color:g.turn,red:null};play(g,-1);if(g.over)return finish();
+if(two){setMsg((g.turn===T?'Blue':'Red')+'’s turn. The other side passed.');return draw()}computer('area')}
+function undo(){if(busy||replaying||!hist.length)return;restore(hist.pop());fbData=null;lastTurn=null;setMsg('Went back one move. Try again!');draw()}
+function watch(){if(!lastTurn||replaying)return;replaying=true;const end=snap();const lt=lastTurn;g=clone(lt.snap.g);falls=[];aiLast=-2;kidMark=-1;hint=false;showBetter=false;setMsg('Watch: your move…');draw();
+later(()=>{g.turn=lt.color;const r=play(g,lt.kid<0?-1:lt.kid);kidMark=lt.kid;falls=r.cap?r.cap.map(k=>({i:k,c:3-lt.color})):[];draw();
+later(()=>{if(lt.red!=null&&lt.red>=-1){g.turn=K;const r2=play(g,lt.red);aiLast=lt.red;falls=r2.cap?r2.cap.map(k=>({i:k,c:T})):[];setMsg('…then Red’s move.')}draw();
+later(()=>{restore(end);falls=[];replaying=false;draw()},1200)},1000)},700)}
+function tower(x,y,s,col,cls){const f='var(--'+col+')',d='var(--'+col+'-d)';let h='<g'+(cls?' class="'+cls+'"':'')+'><rect x="'+(x-s*.72)+'" y="'+(y-s*.45)+'" width="'+s*1.44+'" height="'+s*1.2+'" rx="2" style="fill:'+f+';stroke:'+d+';stroke-width:1.6"/>';
+[-.72,-.18,.36].forEach(o=>{h+='<rect x="'+(x+o*s)+'" y="'+(y-s*.8)+'" width="'+s*.36+'" height="'+s*.38+'" style="fill:'+f+';stroke:'+d+';stroke-width:1.6"/>'});
+h+='<path d="M'+(x-s*.22)+' '+(y+s*.75)+'v-'+s*.32+'a'+s*.22+' '+s*.22+' 0 0 1 '+s*.44+' 0v'+s*.32+'z" style="fill:var(--door)"/><rect x="'+(x-s*.09)+'" y="'+(y-s*.22)+'" width="'+s*.18+'" height="'+s*.22+'" style="fill:var(--door)"/></g>';return h}
+function stone(x,y,s,c,cls){return'<circle'+(cls?' class="'+cls+'"':'')+' cx="'+x+'" cy="'+y+'" r="'+s+'" style="fill:var(--'+(c===T?'black':'white')+');stroke:var(--'+(c===T?'black':'whiteline')+');stroke-width:1.2"/>'}
+function draw(){const L=LS[li],N=g.N,P=N>5?32:44,cs=(400-2*P)/(N-1),x=i=>P+(i%N)*cs,y=i=>P+Math.floor(i/N)*cs,R=Math.min(cs*.42,32),real=L.kind==='real',cas=view==='castle';
+const col=c=>c===T?'blue':'red';
+let h='<rect x="4" y="4" width="392" height="392" rx="20" style="fill:var(--'+(cas?'grass':'wood')+')"/>';
+for(let k=0;k<N;k++){const st='stroke:var(--'+(cas?'path':'woodline')+');stroke-width:'+(cas?3:1.3);h+='<line x1="'+P+'" y1="'+(P+k*cs)+'" x2="'+(400-P)+'" y2="'+(P+k*cs)+'" style="'+st+'"/><line x1="'+(P+k*cs)+'" y1="'+P+'" x2="'+(P+k*cs)+'" y2="'+(400-P)+'" style="'+st+'"/>'}
+const sc=score(g);
+if(L.kind==='land'||real)for(let i=0;i<N*N;i++){const o=sc.own[i];if(o!==3&&o!==4)continue;const c=o-2;
+if(cas){const q=cs*.62;h+='<rect x="'+(x(i)-q/2)+'" y="'+(y(i)-q/2)+'" width="'+q+'" height="'+q+'" rx="5" style="fill:var(--'+col(c)+');opacity:.25"/>';[-.22,0,.22].forEach(o2=>{h+='<line x1="'+(x(i)+o2*q)+'" y1="'+(y(i)-q*.24)+'" x2="'+(x(i)+o2*q)+'" y2="'+(y(i)+q*.24)+'" style="stroke:var(--crop);stroke-width:2.2;stroke-linecap:round"/>'})}
+else{const q=cs*.24;h+='<rect x="'+(x(i)-q/2)+'" y="'+(y(i)-q/2)+'" width="'+q+'" height="'+q+'" style="fill:var(--'+(c===T?'black':'white')+');stroke:var(--'+(c===T?'black':'whiteline')+')"/>'}}
+const gs=[...groupsOf(T),...groupsOf(K)],danger=new Set(),roads={};
+gs.forEach(gr=>{const c=g.b[gr.st[0]];if(gr.libs.size===1)gr.st.forEach(k=>danger.add(k));if(real&&gr.libs.size>2)return;gr.libs.forEach(l=>{(roads[l]=roads[l]||new Set()).add(c)})});
+const hl=showBetter&&fbData&&fbData.spots?fbData.spots:hint?hintSpots():[];
+hl.forEach(l=>{h+='<circle class="hint" cx="'+x(l)+'" cy="'+y(l)+'" r="'+R*.95+'" style="fill:var(--warn-bg);stroke:var(--warn);stroke-width:2.5"/>'});
+for(const l in roads){const cl=[...roads[l]];cl.forEach((c,j)=>{const dx=cl.length>1?(j?6:-6):0;h+=cas?'<circle cx="'+(x(+l)+dx)+'" cy="'+y(+l)+'" r="'+Math.max(6,R*.28)+'" style="fill:none;stroke:var(--'+col(c)+');stroke-width:2.5;stroke-dasharray:3 3"/>':'<circle cx="'+(x(+l)+dx)+'" cy="'+y(+l)+'" r="'+Math.max(4,R*.18)+'" style="fill:var(--'+col(c)+');opacity:.65"/>'})}
+if(g.ko>=0&&g.turn===T&&state==='play'&&!g.b[g.ko]){const kx=x(g.ko),ky=y(g.ko),q=R*.55;h+='<circle cx="'+kx+'" cy="'+ky+'" r="'+q+'" style="fill:none;stroke:var(--muted);stroke-width:3;stroke-dasharray:5 4"/><line x1="'+(kx-q*.7)+'" y1="'+(ky-q*.7)+'" x2="'+(kx+q*.7)+'" y2="'+(ky+q*.7)+'" style="stroke:var(--muted);stroke-width:3;stroke-linecap:round"/>'}
+if(cas)for(let i=0;i<N*N;i++){if(!g.b[i])continue;for(const m of [i+1,i+N]){if(m>=N*N||!g.nb[i].includes(m)||g.b[m]!==g.b[i])continue;const c=col(g.b[i]);h+='<line x1="'+x(i)+'" y1="'+y(i)+'" x2="'+x(m)+'" y2="'+y(m)+'" style="stroke:var(--'+c+'-d);stroke-width:'+R*.62+'"/><line x1="'+x(i)+'" y1="'+y(i)+'" x2="'+x(m)+'" y2="'+y(m)+'" style="stroke:var(--'+c+');stroke-width:'+R*.4+';stroke-dasharray:7 3"/>'}}
+for(let i=0;i<N*N;i++){if(!g.b[i])continue;const d=danger.has(i);if(d)h+='<circle cx="'+x(i)+'" cy="'+y(i)+'" r="'+R*1.02+'" style="fill:none;stroke:var(--alarm);stroke-width:2.5;stroke-dasharray:5 4"/>';h+=cas?tower(x(i),y(i),R*.82,col(g.b[i]),d?'danger':''):stone(x(i),y(i),R*.98,g.b[i],d?'danger':'')}
+if(aiLast>=0&&g.b[aiLast])h+='<circle cx="'+x(aiLast)+'" cy="'+y(aiLast)+'" r="'+(R+5)+'" style="fill:none;stroke:var(--red);stroke-width:2.5"/>';
+if(kidMark>=0&&g.b[kidMark]&&replaying)h+='<circle cx="'+x(kidMark)+'" cy="'+y(kidMark)+'" r="'+(R+5)+'" style="fill:none;stroke:var(--blue);stroke-width:2.5"/>';
+gs.forEach(gr=>{if(real&&gr.libs.size>3)return;const a=gr.st.reduce((p,q)=>(y(q)<y(p)||(y(q)===y(p)&&x(q)>x(p)))?q:p);const bx=x(a)+R*.85,by=y(a)-R*.85,c=col(g.b[a]);h+='<circle cx="'+bx+'" cy="'+by+'" r="11" style="fill:var(--panel);stroke:var(--'+c+');stroke-width:2"/><text x="'+bx+'" y="'+(by+4.5)+'" text-anchor="middle" style="font:700 13px var(--body);fill:var(--fg)">'+gr.libs.size+'</text>'});
+falls.forEach(p=>{h+=cas?tower(x(p.i),y(p.i),R*.82,col(p.c),'fall'):stone(x(p.i),y(p.i),R*.98,p.c,'fall')});
+for(let i=0;i<N*N;i++)h+='<circle data-i="'+i+'" cx="'+x(i)+'" cy="'+y(i)+'" r="'+cs/2+'" style="fill:transparent;cursor:pointer"/>';
+$('b').innerHTML=h;
+$('steps').innerHTML=LS.map((l,n)=>'<button type="button" class="step'+(done.has(n)?' done':'')+(n===li?' cur':'')+'" data-l="'+n+'" aria-label="Lesson '+(n+1)+': '+l.ttl+'"'+(n===li?' aria-current="step"':'')+'>'+(n+1)+'</button>').join('');
+const game=isGame();$('lvlrow').hidden=!game;['easy','medium','hard','two'].forEach(v=>$('lv-'+v).setAttribute('aria-pressed',String(v===lvl)));
+['castle','stone'].forEach(v=>$('vw-'+v).setAttribute('aria-pressed',String(v===view)));
+$('hint').hidden=game||state!=='play';$('pass').hidden=!real||state!=='play';$('undo').hidden=!game||!hist.length||(fbData&&fbData.turn);
+$('score').hidden=!real;if(real)$('score').innerHTML='<span class="t">Blue '+sc.t+'</span><span class="k">Red '+sc.k+'</span>';
+$('next').hidden=state!=='won'&&!(state==='lost'&&lvl==='two'&&game);$('next').textContent=li<LS.length-1?'Next lesson':'Play again';$('retry').textContent=state==='lost'?'Try again':'Start over';renderFb()}
+$('b').addEventListener('click',e=>{const t=e.target.closest('[data-i]');if(t)tap(+t.dataset.i)});
+$('steps').addEventListener('click',e=>{const t=e.target.closest('[data-l]');if(t)go(+t.dataset.l)});
+$('lvl').addEventListener('click',e=>{const t=e.target.closest('[data-lv]');if(t){lvl=t.dataset.lv;go(li)}});
+$('view').addEventListener('click',e=>{const t=e.target.closest('[data-vw]');if(t){view=t.dataset.vw;draw()}});
+$('hint').onclick=()=>{hint=true;showBetter=false;const s=hintSpots();setMsg(s.length?'Look at the glowing spot'+(s.length>1?'s':'')+'.':'Build anywhere else on the board first.');draw()};
+$('showbetter').onclick=()=>{showBetter=true;draw()};
+$('watch').onclick=watch;$('back').onclick=undo;$('undo').onclick=undo;$('pass').onclick=pass;
+$('retry').onclick=()=>go(li);
+$('next').onclick=()=>go(li<LS.length-1?li+1:li);
+function start(data){let d=data&&data.li!=null?data:null;if(!d){try{d=JSON.parse(localStorage.getItem(SAVE)||'null')}catch(e){d=null}}
+if(d){(d.done||[]).forEach(n=>done.add(n));if(['easy','medium','hard','two'].includes(d.lvl))lvl=d.lvl;go(Math.min(Math.max(d.li|0,0),LS.length-1))}else go(0)}
+start({});
+</script>
