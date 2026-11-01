@@ -56,13 +56,60 @@ defmodule Go.Progress do
   def count_path(player, world, :new),
     do: put(player, {:since_review, world}, since_review(player, world) + 1)
 
-  @doc """
-  The place of a player in the stories: `%{story: id, moment: n}` (the
-  moment from 1), or nil before the first story.
-  """
-  def story(player), do: get(player, :story, nil)
+  ## Runs (see Go.Runs)
 
-  def put_story(player, place), do: put(player, :story, place)
+  @doc "The seed of the run that the player plays now, or nil."
+  def current_run(player), do: get(player, :current_run, nil)
+
+  @doc """
+  The place of a player in the run of a seed, or nil before the start:
+  `%{seed, level, stage, moment, results}`. `moment` is `:start` (the
+  moves before the first puzzle play first), the number of the puzzle in
+  the stage (from 1), or `:end`. `results` has the result of each puzzle of
+  the stage, in order.
+  """
+  def run_place(player, seed), do: get(player, {:run, seed}, nil)
+
+  @doc "Saves the place of a player in a run, and makes it the current run."
+  def put_run_place(player, %{seed: seed} = place) do
+    put(player, {:run, seed}, place)
+    put(player, :current_run, seed)
+  end
+
+  @doc """
+  Saves the result of a stage, for a later leaderboard: the stars and the
+  help of each puzzle. The results come from the plays on the server,
+  never from the browser.
+  """
+  def record_stage(player, %{seed: seed, level: level, stage: stage, results: results}) do
+    entry = %{seed: seed, level: level, stage: stage, results: results, at: DateTime.utc_now()}
+    others = Enum.reject(stage_results(player), &(&1.seed == seed and &1.stage == stage))
+    put(player, :stage_results, [entry | others])
+  end
+
+  @doc "The saved results of the stages, the newest first."
+  def stage_results(player), do: get(player, :stage_results, [])
+
+  @doc """
+  The runs that the player finished (all stages), with the mean stars of
+  the puzzles: `[%{seed, level, stars_per_puzzle}]`.
+  """
+  def finished_runs(player) do
+    player
+    |> stage_results()
+    |> Enum.group_by(& &1.seed)
+    |> Enum.filter(fn {_seed, stages} -> length(stages) == Go.Runs.stages() end)
+    |> Enum.map(fn {seed, stages} ->
+      results = Enum.flat_map(stages, & &1.results)
+      stars = Enum.sum(Enum.map(results, & &1.stars))
+
+      %{
+        seed: seed,
+        level: hd(stages).level,
+        stars_per_puzzle: if(results == [], do: 0, else: stars / length(results))
+      }
+    end)
+  end
 
   @doc "The look of a player: `:castle` or `:board`."
   def look(player), do: get(player, :look, :castle)

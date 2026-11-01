@@ -22,7 +22,7 @@ defmodule GoWeb.Router do
       live "/", HomeLive
       live "/play/:world", PuzzleLive
       live "/worlds/:world", WorldLive
-      live "/story", PuzzleLive, :story
+      live "/run/:seed", PuzzleLive, :run
     end
   end
 

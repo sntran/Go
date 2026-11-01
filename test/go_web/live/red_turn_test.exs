@@ -92,13 +92,13 @@ defmodule GoWeb.RedTurnTest do
     assert stone(html, {0, 3}) == nil
   end
 
-  test "the first moves of a story play on the board, and Skip goes to the first moment", %{
+  test "the first moves of a run play on the board, and Skip goes to the first puzzle", %{
     conn: conn
   } do
-    {:ok, view, html} = live(conn, ~p"/story")
-    assert text(html, "#title") == "The game starts"
+    {:ok, view, html} = live(conn, ~p"/run/8F3K")
+    assert text(html, "#title") == "Stage 1 of 5"
     assert text(html, "#message") == "Watch the game…"
     html = click(view, "skip")
-    assert text(html, "#kicker") =~ "Moment 1 of"
+    assert text(html, "#kicker") =~ "Puzzle 1 of"
   end
 end

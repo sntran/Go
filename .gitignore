@@ -40,3 +40,4 @@ npm-debug.log
 # The build of Cloudflare Workers (npm run build, wrangler).
 /app.com
 /.wrangler/
+/library-parts.jsonl

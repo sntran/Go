@@ -21,7 +21,7 @@ defmodule GoWeb.PuzzleLiveTest do
   describe "home" do
     test "shows the worlds, and the capture world opens", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/")
-      assert html =~ "Continue the story" or html =~ "Start the story"
+      assert html =~ "Start a new run"
       assert html =~ "Capture"
       assert html =~ "Escape"
       assert html =~ "Soon"

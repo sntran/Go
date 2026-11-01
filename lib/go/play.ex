@@ -120,7 +120,9 @@ defmodule Go.Play do
 
   @doc "True when `think/2` needs no search: the book has the answer."
   @spec quick?(t()) :: boolean()
-  def quick?(%__MODULE__{thinking: %{start?: true}, puzzle: %Puzzle{book: %{}}}), do: true
+  def quick?(%__MODULE__{thinking: %{start?: true, point: point}, puzzle: %Puzzle{book: %{} = book}}),
+    do: Map.has_key?(book.first, point)
+
   def quick?(_play), do: false
 
   defp over_message(%{status: :solved}),

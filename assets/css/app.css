@@ -254,6 +254,8 @@ a.world-link:hover { border-color: var(--accent); }
 .fade-stop.wood { stop-color: var(--wood); }
 .board-goes-on .fade-right { fill: url(#fade-right); }
 .board-goes-on .fade-bottom { fill: url(#fade-bottom); }
+/* A run: the part of the board outside the fight is dimmed. */
+.dim-outside { fill: var(--bg); opacity: .6; pointer-events: none; }
 /* The fields at the end of a game. */
 .field-blue .field-land { fill: var(--blue); opacity: .25; }
 .field-red .field-land { fill: var(--red); opacity: .25; }
@@ -261,10 +263,11 @@ a.world-link:hover { border-color: var(--accent); }
 .field-mark.field-blue { fill: var(--black); stroke: var(--black); }
 .field-mark.field-red { fill: var(--white); stroke: var(--whiteline); }
 
-/* The story button of the home page. */
+/* The run buttons of the home page. */
 .story-start { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .story-start .pill { font-size: 1.1rem; padding: 12px 22px; }
 .story-where { color: var(--muted); font-weight: 700; }
+.stage-line .stars { margin-right: 8px; letter-spacing: 1px; }
 .intro h2 { font-family: var(--display); font-weight: 700; font-size: 1.4rem; margin: 0; }
 .world { display: grid; gap: 4px; }
 .world-all { color: var(--accent); font-weight: 700; padding: 0 6px; }

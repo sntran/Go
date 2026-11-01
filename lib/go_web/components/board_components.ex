@@ -33,6 +33,10 @@ defmodule GoWeb.BoardComponents do
 
   attr :fields, :map, default: %{}, doc: "the fields at the end of a game, as point => color"
 
+  attr :window, :any,
+    default: nil,
+    doc: "the square of the fight, as {row, column, size}: the board dims the points outside it"
+
   def board(assigns) do
     full = assigns.board.size
     n = min(assigns.view || full, full)
@@ -97,7 +101,8 @@ defmodule GoWeb.BoardComponents do
         walls: walls,
         badges: badges,
         stones: assigns.board.stones |> Enum.filter(fn {p, _} -> inside?.(p) end) |> Enum.sort(),
-        points: Enum.filter(Board.points(assigns.board), inside?)
+        points: Enum.filter(Board.points(assigns.board), inside?),
+        dim: dim_path(assigns.window, full, pad, cs)
       )
 
     ~H"""
@@ -253,6 +258,8 @@ defmodule GoWeb.BoardComponents do
         y={x(@pad, @cs, elem(@target, 0))}
         r={@r}
       />
+      <%!-- The part outside the fight is dimmed. A tap there still plays. --%>
+      <path :if={@dim} class="dim-outside" d={@dim} fill-rule="evenodd" aria-hidden="true" />
       <circle
         :for={{{row, col}, color} <- Enum.sort(@marks)}
         :if={Board.get(@board, {row, col})}
@@ -373,6 +380,19 @@ defmodule GoWeb.BoardComponents do
   end
 
   defp x(pad, cs, k), do: pad + k * cs
+
+  # The whole board, with a hole for the window. Nil when the window holds
+  # the whole board.
+  defp dim_path(nil, _full, _pad, _cs), do: nil
+  defp dim_path({_r, _c, s}, full, _pad, _cs) when s >= full, do: nil
+
+  defp dim_path({r0, c0, s}, full, pad, cs) do
+    edge = fn k -> if k <= 0, do: 4, else: x(pad, cs, k) - cs / 2 end
+    far = fn k -> if k >= full, do: 396, else: x(pad, cs, k) - cs / 2 end
+    {x1, y1, x2, y2} = {edge.(c0), edge.(r0), far.(c0 + s), far.(r0 + s)}
+
+    "M4 4H396V396H4Z M#{f(x1)} #{f(y1)}H#{f(x2)}V#{f(y2)}H#{f(x1)}Z"
+  end
 
   defp f(v) when is_integer(v), do: Integer.to_string(v)
   defp f(v), do: :erlang.float_to_binary(v / 1, decimals: 1)

@@ -38,7 +38,20 @@ defmodule Go.Puzzles.Symmetry do
         red: Enum.sort(Enum.map(p.red, f)),
         answer: p.answer && f.(p.answer),
         goal: %{p.goal | target: f.(p.goal.target)},
-        wrong: Map.new(p.wrong, fn {pt, t} -> {f.(pt), map_reply(t, f)} end)
+        wrong: Map.new(p.wrong, fn {pt, t} -> {f.(pt), map_reply(t, f)} end),
+        book: map_book(p.book, f)
+    }
+  end
+
+  @doc "Applies a point function to all points of a book (see `Go.Puzzle`)."
+  def map_book(nil, _f), do: nil
+
+  def map_book(book, f) do
+    line = fn l -> Enum.map(l, fn {c, m} -> {c, if(m == :pass, do: :pass, else: f.(m))} end) end
+
+    %{
+      first: Map.new(book.first, fn {p, e} -> {f.(p), %{e | line: line.(e.line)}} end),
+      answer: line.(book.answer)
     }
   end
 

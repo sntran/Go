@@ -7,15 +7,17 @@ defmodule GoWeb.PuzzleLive do
   time between them (see `:red_delay` and `:watch_delay` in the config).
   While Red plays, taps on the board only show "Wait".
 
-  The same screen plays the story games (the live action `:story`, see
-  `Go.Stories`): each moment is a puzzle, and between the moments the main
-  line of the game plays on the board. The board shows a corner view that
-  grows with the game.
+  The same screen plays the runs (the live action `:run`, see `Go.Runs`):
+  5 stages, and each stage is a story of `Go.Library`. Each puzzle is a
+  moment of the game, and between the puzzles the main line of the game
+  plays on the board. The board shows the whole board. During a puzzle, it
+  dims the part outside the fight. The place of the player in the run
+  stays in `Go.Progress`.
   """
 
   use GoWeb, :live_view
 
-  alias Go.{Board, Play, Progress, Puzzles, Score, Stories}
+  alias Go.{Board, Library, Play, Progress, Puzzles, Runs, Score}
   alias GoWeb.{BoardComponents, Worlds}
 
   @impl true
@@ -23,7 +25,7 @@ defmodule GoWeb.PuzzleLive do
     socket =
       assign(socket,
         player: player,
-        mode: if(socket.assigns.live_action == :story, do: :story, else: :world),
+        mode: if(socket.assigns.live_action == :run, do: :run, else: :world),
         look: Progress.look(player),
         play: nil,
         kind: :pick,
@@ -32,21 +34,22 @@ defmodule GoWeb.PuzzleLive do
         step: 0,
         timer: nil,
         recorded: false,
-        story: nil,
-        story_phase: nil,
-        story_view: 5,
+        run: nil,
+        place: nil,
+        phase: nil,
         anim: nil,
         red_delay: Application.get_env(:go, :red_delay, 700),
         watch_delay: Application.get_env(:go, :watch_delay, 900),
         story_delay: Application.get_env(:go, :story_delay, 500),
         score: nil,
         final: nil,
-        moment: nil
+        moment: nil,
+        puzzle_no: nil
       )
 
     case socket.assigns.mode do
-      :story ->
-        {:ok, assign(socket, world: nil)}
+      :run ->
+        mount_run(assign(socket, world: nil), params["seed"])
 
       :world ->
         case Worlds.parse(params["world"]) do
@@ -57,8 +60,8 @@ defmodule GoWeb.PuzzleLive do
   end
 
   @impl true
-  def handle_params(_params, _uri, %{assigns: %{mode: :story}} = socket) do
-    {:noreply, start_story(socket)}
+  def handle_params(_params, _uri, %{assigns: %{mode: :run}} = socket) do
+    {:noreply, start_run(socket)}
   end
 
   def handle_params(params, _uri, socket) do
@@ -173,24 +176,17 @@ defmodule GoWeb.PuzzleLive do
     end
   end
 
-  # The story: after a moment, the game goes on to the next moment.
-  def handle_event("continue", _, %{assigns: %{mode: :story, play: play}} = socket) do
-    if Play.over?(play), do: {:noreply, continue_story(socket)}, else: {:noreply, socket}
+  # The run: after a puzzle, the game goes on to the next puzzle.
+  def handle_event("continue", _, %{assigns: %{mode: :run, phase: :moment, play: play}} = socket) do
+    if Play.over?(play), do: {:noreply, continue_run(socket)}, else: {:noreply, socket}
   end
 
   def handle_event("skip", _, %{assigns: %{anim: %{}}} = socket) do
     {:noreply, finish_anim(socket)}
   end
 
-  def handle_event("next_story", _, %{assigns: %{mode: :story, story_phase: :score}} = socket) do
-    case next_story(socket.assigns.story) do
-      nil ->
-        {:noreply, push_navigate(socket, to: ~p"/")}
-
-      story ->
-        Progress.put_story(socket.assigns.player, %{story: story.id, moment: 1})
-        {:noreply, start_story(socket)}
-    end
+  def handle_event("next_stage", _, %{assigns: %{mode: :run, phase: :stage_end}} = socket) do
+    {:noreply, next_stage(socket)}
   end
 
   def handle_event("look", %{"look" => look}, socket) when look in ["castle", "board"] do
@@ -293,7 +289,7 @@ defmodule GoWeb.PuzzleLive do
   defp record(%{assigns: %{play: play, recorded: false}} = socket) do
     if Play.over?(play) do
       Progress.record(socket.assigns.player, play)
-      socket |> count_path() |> assign(recorded: true)
+      socket |> count_path() |> record_run() |> assign(recorded: true)
     else
       socket
     end
@@ -310,84 +306,162 @@ defmodule GoWeb.PuzzleLive do
 
   defp count_path(socket), do: socket
 
-  defp put_play(%{assigns: %{mode: :story}} = socket, play) do
-    # The view of a story grows with the board, and never becomes smaller.
-    view = Stories.view(Play.shown_board(play), socket.assigns.story_view)
-    assign(socket, play: play, story_view: view, step: socket.assigns.step + 1)
-  end
-
   defp put_play(socket, play), do: assign(socket, play: play, step: socket.assigns.step + 1)
 
-  ## The story
+  ## The run
 
-  # The place of the player: the story and the moment (from 1). At moment 1,
-  # the first moves of the game play first.
-  defp start_story(socket) do
-    stories = Stories.all()
-    place = Progress.story(socket.assigns.player) || %{story: hd(stories).id, moment: 1}
-    story = Stories.get(place.story) || hd(stories)
-    socket = assign(socket, story: story, story_view: 5, page_title: story.title, anim: nil)
-
+  defp mount_run(socket, param) do
     cond do
-      place.moment == :end ->
-        final = Stories.board_at(story, length(story.moves))
+      param == "new" ->
+        {:ok, push_navigate(socket, to: ~p"/run/#{Runs.new_seed()}")}
 
-        assign(socket,
-          story_phase: :score,
-          score: Score.count(final),
-          final: final,
-          story_view: Stories.view(final)
-        )
+      param == "daily" ->
+        {:ok, push_navigate(socket, to: ~p"/run/#{Runs.daily_seed()}")}
 
-      place.moment == 1 ->
-        first = hd(story.moments)
-        start_anim(socket, 0, first.index, {:moment, 1}, "The game starts")
+      Library.all() == [] ->
+        {:ok, socket |> put_flash(:error, "There are no stories yet.") |> push_navigate(to: ~p"/")}
+
+      seed = Runs.parse(param) ->
+        {:ok, assign(socket, seed: seed)}
 
       true ->
-        start_moment(socket, min(place.moment, length(story.moments)))
+        {:ok, socket |> put_flash(:error, "This is not the code of a run.") |> push_navigate(to: ~p"/")}
     end
   end
 
-  defp start_moment(socket, k) do
-    %{story: story, player: player} = socket.assigns
-    moment = Enum.at(story.moments, k - 1)
-    Progress.put_story(player, %{story: story.id, moment: k})
+  # The place of the player in the run of the seed. A new place starts at
+  # stage 1, and fixes the level of the player for the whole run.
+  defp start_run(socket) do
+    %{player: player, seed: seed} = socket.assigns
+
+    place =
+      Progress.run_place(player, seed) ||
+        %{seed: seed, level: Runs.level(player), stage: 1, moment: :start, results: []}
+
+    Progress.put_run_place(player, place)
 
     socket
-    |> assign(
-      story_phase: :moment,
-      moment: k,
-      anim: nil,
-      kind: :story,
-      counted: false,
-      recorded: false,
-      timer: nil,
-      story_view: max(socket.assigns.story_view, moment.view)
-    )
-    |> put_play(Play.new(moment.puzzle))
+    |> assign(run: Runs.run(seed, place.level), place: place, page_title: "Run #{seed}")
+    |> resume()
   end
 
-  defp continue_story(socket) do
-    %{story: story, moment: k} = socket.assigns
-    from = Enum.at(story.moments, k - 1).index
+  defp resume(%{assigns: %{place: place}} = socket) do
+    case place do
+      %{stage: :done} ->
+        assign(socket, phase: :run_end, anim: nil, play: nil)
 
-    case Enum.at(story.moments, k) do
-      nil -> start_anim(socket, from, length(story.moves), :score, "The end of the game")
-      next -> start_anim(socket, from, next.index, {:moment, k + 1}, "The game goes on")
+      %{moment: :start} ->
+        stage = current_stage(socket)
+        first = hd(stage.puzzles)
+        title = "Stage #{stage.number} of #{Runs.stages()}"
+        start_anim(socket, stage.from, first.index, {:puzzle, 1}, title)
+
+      %{moment: :end} ->
+        end_stage(socket)
+
+      %{moment: n} ->
+        start_puzzle(socket, n)
     end
+  end
+
+  defp current_stage(%{assigns: %{run: run, place: place}}), do: Enum.at(run.stages, place.stage - 1)
+
+  defp save_place(socket, place) do
+    Progress.put_run_place(socket.assigns.player, place)
+    assign(socket, place: place)
+  end
+
+  defp start_puzzle(socket, n) do
+    stage = current_stage(socket)
+    moment = Enum.at(stage.puzzles, n - 1)
+
+    socket
+    |> save_place(%{socket.assigns.place | moment: n})
+    |> assign(
+      phase: :moment,
+      moment: moment,
+      puzzle_no: n,
+      anim: nil,
+      kind: :run,
+      counted: false,
+      recorded: false,
+      timer: nil
+    )
+    |> put_play(Play.new(Runs.puzzle(stage, moment)))
+  end
+
+  # The game goes on from the moment, with its correct move, to the next
+  # puzzle, or to the end of the stage. The computer plays the moments that
+  # are not puzzles.
+  defp continue_run(socket) do
+    %{moment: moment, puzzle_no: n} = socket.assigns
+    stage = current_stage(socket)
+
+    case Enum.at(stage.puzzles, n) do
+      nil ->
+        title = if stage.full, do: "The end of the game", else: "The end of the stage"
+        start_anim(socket, moment.index, stage.to, :stage_end, title)
+
+      next ->
+        start_anim(socket, moment.index, next.index, {:puzzle, n + 1}, "The game goes on")
+    end
+  end
+
+  # The result of each puzzle of the stage, the first time that it ends.
+  defp record_run(%{assigns: %{mode: :run, phase: :moment, place: place, moment: m, play: play}} = socket) do
+    if Enum.any?(place.results, &(&1.index == m.index)) do
+      socket
+    else
+      result = Play.result(play)
+
+      entry = %{
+        index: m.index,
+        result: result,
+        stars: if(result == :solved, do: Play.stars(play), else: 0),
+        help: Play.help(play)
+      }
+
+      save_place(socket, %{place | results: place.results ++ [entry]})
+    end
+  end
+
+  defp record_run(socket), do: socket
+
+  defp end_stage(socket) do
+    stage = current_stage(socket)
+    socket = save_place(socket, %{socket.assigns.place | moment: :end})
+    Progress.record_stage(socket.assigns.player, socket.assigns.place)
+    board = Library.board_at(stage.story, stage.to)
+
+    assign(socket,
+      phase: :stage_end,
+      anim: nil,
+      play: nil,
+      final: board,
+      score: if(stage.full, do: Score.count(board))
+    )
+  end
+
+  defp next_stage(%{assigns: %{place: place}} = socket) do
+    place =
+      if place.stage >= Runs.stages(),
+        do: %{place | stage: :done, moment: :end},
+        else: %{place | stage: place.stage + 1, moment: :start, results: []}
+
+    socket |> save_place(place) |> resume()
   end
 
   # Plays the moves of the main line from `from` to `to` on the board.
   defp start_anim(socket, from, to, then, title) do
-    %{story: story} = socket.assigns
-    board = Stories.board_at(story, from)
+    story = current_stage(socket).story
+    board = Library.board_at(story, from)
     steps = story.moves |> Enum.slice(from, to - from)
 
     socket
     |> assign(
-      story_phase: :anim,
+      phase: :anim,
+      play: nil,
       anim: %{board: board, steps: steps, falls: [], marks: %{}, then: then, title: title},
-      story_view: Stories.view(board, socket.assigns.story_view),
       timer: nil
     )
     |> schedule(:story_step, socket.assigns.story_delay)
@@ -405,11 +479,7 @@ defmodule GoWeb.PuzzleLive do
         marks: marks
     }
 
-    assign(socket,
-      anim: anim,
-      story_view: Stories.view(board, socket.assigns.story_view),
-      step: socket.assigns.step + 1
-    )
+    assign(socket, anim: anim, step: socket.assigns.step + 1)
   end
 
   defp anim_step(socket), do: socket
@@ -417,24 +487,18 @@ defmodule GoWeb.PuzzleLive do
   defp finish_anim(%{assigns: %{anim: %{steps: [_ | _]}}} = socket),
     do: socket |> anim_step() |> finish_anim()
 
-  defp finish_anim(%{assigns: %{anim: %{then: then, board: board}}} = socket) do
+  defp finish_anim(%{assigns: %{anim: %{then: then}}} = socket) do
     socket = assign(socket, timer: nil)
 
     case then do
-      {:moment, k} ->
-        start_moment(socket, k)
-
-      :score ->
-        Progress.put_story(socket.assigns.player, %{story: socket.assigns.story.id, moment: :end})
-        assign(socket, story_phase: :score, score: Score.count(board), final: board, anim: nil)
+      {:puzzle, k} -> start_puzzle(socket, k)
+      :stage_end -> end_stage(socket)
     end
   end
 
   defp finish_anim(socket), do: socket
 
-  defp next_story(story) do
-    Stories.all() |> Enum.drop_while(&(&1.id != story.id)) |> Enum.at(1)
-  end
+  defp stage_stars(results), do: results |> Enum.map(& &1.stars) |> Enum.sum()
 
   defp update_play(%{assigns: %{play: %Play{} = play}} = socket, fun),
     do: put_play(socket, fun.(play))
@@ -444,14 +508,12 @@ defmodule GoWeb.PuzzleLive do
   ## View
 
   @impl true
-  def render(%{mode: :story, story_phase: :anim} = assigns) do
+  def render(%{mode: :run, phase: :anim} = assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
       <main class="main">
         <section class="head">
-          <p class="kicker" id="kicker">
-            <.link navigate={~p"/"} class="back-link">Home</.link> · {@story.title}
-          </p>
+          <.run_kicker place={@place} />
           <h1 id="title">{@anim.title}</h1>
           <p class="say" id="say">
             Watch the moves of the game. Blue plays the black stones, Red plays the white stones.
@@ -465,7 +527,6 @@ defmodule GoWeb.PuzzleLive do
             falls={@anim.falls}
             marks={@anim.marks}
             step={@step}
-            view={@story_view}
           />
           <div class="row" id="actions">
             <button type="button" class="pill" id="skip" phx-click="skip">Skip</button>
@@ -476,21 +537,24 @@ defmodule GoWeb.PuzzleLive do
     """
   end
 
-  def render(%{mode: :story, story_phase: :score} = assigns) do
+  def render(%{mode: :run, phase: :stage_end} = assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
       <main class="main">
         <section class="head">
-          <p class="kicker" id="kicker">
-            <.link navigate={~p"/"} class="back-link">Home</.link> · {@story.title}
-          </p>
-          <h1 id="title">The end of the game</h1>
-          <p class="say" id="say">
+          <.run_kicker place={@place} />
+          <h1 id="title">
+            {if @score, do: "The end of the game", else: "Stage #{@place.stage} is over"}
+          </h1>
+          <p :if={@score} class="say" id="say">
             Both players closed their borders and passed. Your fields are the empty points that only your towers touch.
+          </p>
+          <p :if={!@score} class="say" id="say">
+            The game goes on, but this stage ends here.
           </p>
         </section>
         <section class="notes">
-          <div id="score" class="fb good" aria-live="polite">
+          <div :if={@score} id="score" class="fb good" aria-live="polite">
             <p class="t" id="fb-title">
               {if @score.winner == :blue, do: "Blue wins!", else: "Red wins this time"}
             </p>
@@ -502,7 +566,11 @@ defmodule GoWeb.PuzzleLive do
             </p>
             <p>Red gets {@score.red.komi} points, because Blue plays first.</p>
           </div>
-          <p class="realgo">
+          <div class="fb" id="stage-result">
+            <p class="t">Your puzzles in this stage</p>
+            <.stage_line results={@place.results} />
+          </div>
+          <p :if={@score} class="realgo">
             <b>In real Go:</b>
             fields are called <b>territory</b>. The score is your stones plus your territory.
           </p>
@@ -510,18 +578,56 @@ defmodule GoWeb.PuzzleLive do
         <section class="play">
           <BoardComponents.board
             board={@final}
-            hide_roads={true}
+            hide_roads={@score != nil}
             look={@look}
             step={@step}
-            view={@story_view}
-            fields={@score.owners}
+            fields={if @score, do: @score.owners, else: %{}}
           />
           <div class="row" id="actions">
-            <button type="button" class="pill primary" id="next-story" phx-click="next_story">
-              {if next_story(@story), do: "Next story", else: "Back home"}
+            <button type="button" class="pill primary" id="next-stage" phx-click="next_stage">
+              {if @place.stage < Runs.stages(), do: "Next stage", else: "See the result of the run"}
             </button>
           </div>
         </section>
+      </main>
+    </Layouts.app>
+    """
+  end
+
+  def render(%{mode: :run, phase: :run_end} = assigns) do
+    stages =
+      assigns.player
+      |> Progress.stage_results()
+      |> Enum.filter(&(&1.seed == assigns.place.seed))
+      |> Enum.sort_by(& &1.stage)
+
+    assigns = assign(assigns, stages: stages)
+
+    ~H"""
+    <Layouts.app flash={@flash}>
+      <main class="done">
+        <p class="kicker" id="kicker">
+          <.link navigate={~p"/"} class="back-link">Home</.link> · Run <span id="seed">{@place.seed}</span>
+        </p>
+        <h1 id="title">You finished the run!</h1>
+        <p class="say">
+          Five games, one moment at a time. Here are your stars.
+        </p>
+        <div class="fb" id="run-result">
+          <p :for={st <- @stages} id={"stage-#{st.stage}"}>
+            <b>Stage {st.stage}:</b> <.stage_line results={st.results} />
+          </p>
+          <p id="run-stars">
+            <b>All stages:</b> ★ {Enum.sum(Enum.map(@stages, &stage_stars(&1.results)))}
+          </p>
+        </div>
+        <p class="say" id="share">
+          Share this run: <code>/run/{@place.seed}</code>. Your friends get the same games.
+        </p>
+        <div class="row">
+          <.link navigate={~p"/run/new"} class="pill primary" id="new-run">Start a new run</.link>
+          <.link navigate={~p"/"} class="pill" id="home">Home</.link>
+        </div>
       </main>
     </Layouts.app>
     """
@@ -556,17 +662,19 @@ defmodule GoWeb.PuzzleLive do
         glow: glow(play),
         atari: atari?(board),
         busy: Play.busy?(play),
-        world_text: Worlds.get(play.puzzle.world)
+        world_text: Worlds.get(play.puzzle.world),
+        run_total: if(assigns.mode == :run, do: length(current_stage(%{assigns: assigns}).puzzles))
       )
 
     ~H"""
     <Layouts.app flash={@flash}>
       <main class="main">
         <section class="head">
-          <p :if={@mode == :story} class="kicker" id="kicker">
-            <.link navigate={~p"/"} class="back-link">Home</.link>
-            · {@story.title} · Moment {@moment} of {length(@story.moments)}
-          </p>
+          <.run_kicker
+            :if={@mode == :run}
+            place={@place}
+            puzzle={"Puzzle #{@puzzle_no} of #{@run_total}"}
+          />
           <p :if={@mode == :world} class="kicker">
             <.link navigate={~p"/"} class="back-link">Worlds</.link>
             · {@world_text.name} · Puzzle {@index} of {@total}
@@ -675,7 +783,7 @@ defmodule GoWeb.PuzzleLive do
             glow={@glow}
             target={@puzzle.goal.target}
             step={@step}
-            view={if @mode == :story, do: @story_view}
+            window={if @mode == :run, do: @moment.window}
           />
           <div class="row" id="actions">
             <button
@@ -709,7 +817,7 @@ defmodule GoWeb.PuzzleLive do
               Try again
             </button>
             <button
-              :if={Play.over?(@play) and @mode == :story}
+              :if={Play.over?(@play) and @mode == :run}
               type="button"
               class="pill primary"
               id="continue"
@@ -732,6 +840,37 @@ defmodule GoWeb.PuzzleLive do
         </section>
       </main>
     </Layouts.app>
+    """
+  end
+
+  attr :place, :map, required: true
+  attr :puzzle, :string, default: nil
+
+  # The kicker of a run page: the seed, the stage and the puzzle.
+  defp run_kicker(assigns) do
+    ~H"""
+    <p class="kicker" id="kicker">
+      <.link navigate={~p"/"} class="back-link">Home</.link>
+      · Run <span id="seed">{@place.seed}</span>
+      <span :if={is_integer(@place.stage)}>· Stage {@place.stage} of {Runs.stages()}</span>
+      <span :if={@puzzle}>· {@puzzle}</span>
+    </p>
+    """
+  end
+
+  attr :results, :list, required: true
+
+  # The stars of each puzzle of a stage. A puzzle that the player learned
+  # or failed has no star.
+  defp stage_line(assigns) do
+    ~H"""
+    <span class="stage-line">
+      <span
+        :for={r <- @results}
+        class="stars"
+        aria-label={"#{r.stars} stars"}
+      >{String.duplicate("★", r.stars)}{String.duplicate("☆", 3 - r.stars)}</span>
+    </span>
     """
   end
 
