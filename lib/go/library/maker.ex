@@ -587,7 +587,7 @@ defmodule Go.Library.Maker do
     margin = story.score.blue - story.score.red
 
     head =
-      "#{story.id}: #{length(story.moves)} moves. Area score: Blue #{story.score.blue}, " <>
+      "#{story.id}: #{length(story.moves)} moves. Main line: area score Blue #{story.score.blue}, " <>
         "Red #{story.score.red} (Blue wins by #{margin}). Estimate before the end: " <>
         "Blue by #{Float.round(story.estimate * 1.0, 1)}. Grade #{story.grade}. Rank score #{story.rank}."
 

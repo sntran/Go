@@ -81,7 +81,8 @@ defmodule Mix.Tasks.Go.Gen.Library do
     games = base.games + length(lines)
     next_seed = max(base.next_seed, Enum.max(seeds, fn -> 0 end) + 1)
     Library.write(stories, output, games: games, next_seed: next_seed)
-    write_report(stories, games, report, output)
+    drops = for %{"drop" => reason} <- lines, do: String.replace(reason, ~r/ \(.*\)$/, "")
+    write_report(stories, games, Enum.frequencies(drops), report, output)
     File.rm(parts)
 
     Mix.shell().info(
@@ -147,7 +148,7 @@ defmodule Mix.Tasks.Go.Gen.Library do
     end
   end
 
-  defp write_report(stories, tried, path, output) do
+  defp write_report(stories, tried, drops, path, output) do
     moments = Enum.flat_map(stories, & &1.moments)
     kinds = Enum.frequencies_by(moments, &"#{&1.goal.type} in #{&1.goal.moves}")
 
@@ -160,8 +161,13 @@ defmodule Mix.Tasks.Go.Gen.Library do
     - Moments: #{length(moments)}. #{Enum.map_join(Enum.sort(kinds), ", ", fn {k, n} -> "#{k}: #{n}" end)}.
     - Size of `#{output}`: #{if File.exists?(output), do: File.stat!(output).size, else: 0} bytes.
 
-    For each story: the area score at the end, the score estimate of KataGo
-    before the end, the grade and the rank score. For each moment: the move,
+    Why the maker dropped the other new games:
+
+    #{Enum.map_join(Enum.sort_by(drops, &(-elem(&1, 1))), "\n", fn {r, n} -> "- #{r}: #{n}" end)}
+
+    For each story: the score of the main line (the area score at the end,
+    and the score estimate of KataGo before the end), the grade and the rank
+    score. For each moment: the move,
     the goal, the answer, the grade, and how many points the answer is better
     than each tempting wrong move (by the score estimate of KataGo). The
     points use the KataGo coordinates: the columns A to J (no I) from the

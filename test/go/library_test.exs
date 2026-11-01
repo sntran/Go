@@ -76,7 +76,7 @@ defmodule Go.LibraryTest do
   end
 
   # The full puzzle checks are slow on a 9x9 board: they run on a sample.
-  for s <- Enum.take_every(@stories, max(div(length(@stories), 8), 1)) do
+  for s <- Enum.take_every(@stories, max(div(length(@stories), 12), 1)) do
     @s s
     @tag timeout: :infinity
     test "#{s.id}: the first moment passes the puzzle checks" do

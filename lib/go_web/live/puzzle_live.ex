@@ -407,13 +407,22 @@ defmodule GoWeb.PuzzleLive do
     %{moment: moment, puzzle_no: n} = socket.assigns
     stage = current_stage(socket)
 
+    # The place moves on at once: a reload during the moves does not show
+    # this puzzle again.
+    place = socket.assigns.place
+
     case Enum.at(stage.puzzles, n) do
       nil ->
         title = if stage.full, do: "The end of the game", else: "The end of the stage"
-        start_anim(socket, moment.index, stage.to, :stage_end, title)
+
+        socket
+        |> save_place(%{place | moment: :end})
+        |> start_anim(moment.index, stage.to, :stage_end, title)
 
       next ->
-        start_anim(socket, moment.index, next.index, {:puzzle, n + 1}, "The game goes on")
+        socket
+        |> save_place(%{place | moment: n + 1})
+        |> start_anim(moment.index, next.index, {:puzzle, n + 1}, "The game goes on")
     end
   end
 
