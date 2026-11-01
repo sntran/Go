@@ -228,6 +228,40 @@ defmodule GoWeb.RunLiveTest do
     assert Progress.run_place(player, @seed).moment == 1
   end
 
+  test "Red answers as the shown answer: run 1-2EFJ, level 3, stage 5, story-285 at move 46", %{
+    conn: conn,
+    player: player
+  } do
+    code = "1-2EFJ"
+    stage = Enum.at(Runs.run(code, 3).stages, 4)
+    assert stage.story.id == "story-285"
+    k = Enum.find_index(stage.puzzles, &(&1.index == 46)) + 1
+
+    Progress.put_run_place(player, %{
+      seed: code,
+      level: 3,
+      stage: 5,
+      moment: k,
+      results: [],
+      daily: nil
+    })
+
+    {:ok, view, html} = live(conn, ~p"/run/#{code}")
+    assert puzzle_of(html) |> Enum.at(1) == "#{k}"
+    puzzle = Runs.puzzle(stage, Enum.at(stage.puzzles, k - 1))
+
+    # Watch the answer, then play it again with taps.
+    click(view, "show-answer")
+    click(view, "retry")
+
+    html =
+      for {:blue, p} <- Play.answer_line(puzzle), reduce: nil do
+        _ -> tap_point(view, p)
+      end
+
+    assert text(html, "#fb-title") in ["You caught Red!", "Your fort is safe!", "Your fort escaped the attack!"]
+  end
+
   test "a shared link gives a new player the same games", %{conn: conn, player: player} do
     {:ok, _view, html} = live(conn, ~p"/run/#{@seed}")
 

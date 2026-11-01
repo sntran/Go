@@ -1,8 +1,9 @@
 defmodule Go.LibraryTest do
   @moduledoc """
-  Each story of the library passes the checks of the library maker
-  (`Go.Library.Maker`), from the data in the file. A sample of the moments
-  runs the full puzzle checks again.
+  Each story of the newest version of the library passes the checks of
+  the library maker (`Go.Library.Maker`), from the data in the file. A
+  sample of the moments runs the full puzzle checks again. The old
+  versions stay as they are, for the old links (see `Go.Library`).
   """
 
   use ExUnit.Case, async: true
@@ -16,6 +17,30 @@ defmodule Go.LibraryTest do
   test "the library has stories" do
     refute Enum.empty?(@stories)
     assert length(Enum.uniq_by(@stories, & &1.id)) == length(@stories)
+  end
+
+  test "no two stories are the same game (with the rotations)" do
+    keys = Enum.map(@stories, &Maker.game_key(&1.moves))
+    assert length(Enum.uniq(keys)) == length(keys)
+  end
+
+  # In each version: a stone that touches the fight is never dimmed.
+  for version <- Library.versions() do
+    @version version
+    test "version #{version}: no stone next to a road of the target, the answer or a trap is dimmed" do
+      for s <- Library.all(@version), m <- s.moments do
+        board = Library.board_at(s, m.index)
+        roads = Board.group(board, m.goal.target).liberties
+        traps = Enum.map(m.diffs, &elem(&1, 0))
+
+        for p <- roads ++ [m.answer | traps],
+            q <- Board.neighbors(board, p),
+            Board.get(board, q) != nil do
+          assert Library.in_window?(m.window, q),
+                 "#{s.id}, move #{m.index}: the stone #{inspect(q)} is outside #{inspect(m.window)}"
+        end
+      end
+    end
   end
 
   for s <- @stories do

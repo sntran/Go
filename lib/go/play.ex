@@ -244,7 +244,7 @@ defmodule Go.Play do
         :solved
 
       good ->
-        {:good, [{:red, Goal.red_move(goal, play.board, play.left)}]}
+        {:good, [{:red, Goal.red_move(goal, play.board, play.left, line_reply(play))}]}
 
       true ->
         hand = if t.start?, do: Map.get(puzzle.wrong, t.point)
@@ -253,6 +253,20 @@ defmodule Go.Play do
         prefer = if t.start?, do: puzzle.answer
         better = Goal.blue_move(goal, t.before, t.left_before, prefer, deep: deep?)
         {:wrong, Enum.map(line, fn {color, move, _} -> {color, move} end), better}
+    end
+  end
+
+  # The next red move of the answer line, when the player follows the line
+  # (the line of "Show the answer"). Red plays it when it is as good as its
+  # best move, so that a player who repeats the shown answer wins.
+  defp line_reply(%{puzzle: puzzle, moves: moves}) do
+    line = answer_line(puzzle)
+
+    with true <- List.starts_with?(line, moves),
+         {:red, move} <- Enum.at(line, length(moves)) do
+      move
+    else
+      _ -> nil
     end
   end
 
