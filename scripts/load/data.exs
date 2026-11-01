@@ -1,7 +1,8 @@
 # The data of the load test (scripts/load/run.mjs): for each run code, the
 # taps of each puzzle of each stage at level 1 (a new player): the blue taps
-# of the shown answer line, and one wrong first tap. Only this tool knows
-# the answers; the browser never gets them.
+# of the shown answer line, and one wrong first tap (nil when the puzzle
+# has no wrong move). Only this tool knows the answers; the browser never
+# gets them.
 #
 #   OUT=/tmp/load-data.json mix run scripts/load/data.exs
 alias Go.{Board, Book, Library, Play, Puzzle, Runs}
@@ -19,15 +20,22 @@ runs =
           puzzle = Runs.puzzle(st, m)
           answer = for {:blue, {r, c}} <- Play.answer_line(puzzle), do: [r, c]
 
-          {wr, wc} =
+          wrongs =
             puzzle
             |> Puzzle.board()
             |> Board.legal_moves(:blue)
             |> Enum.filter(&match?(%{kind: :wrong}, Book.lookup(puzzle, [], &1)))
-            |> Enum.at(i)
-            |> Kernel.||(puzzle.answer)
 
-          %{answer: answer, wrong: [wr, wc]}
+          # A wrong move always gets a reply of Red. Never use the answer
+          # here: a one-move answer solves the puzzle, and Red does not
+          # reply (before, this was the cause of the "missed Red replies").
+          wrong =
+            case wrongs do
+              [] -> nil
+              _ -> wrongs |> Enum.at(rem(i, length(wrongs))) |> Tuple.to_list()
+            end
+
+          %{answer: answer, wrong: wrong}
         end
       end
 

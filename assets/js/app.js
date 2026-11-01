@@ -25,6 +25,7 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/go"
 import topbar from "../vendor/topbar"
 import {Anim} from "./anim.mjs"
+import {Busy} from "./busy.mjs"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 // The date of the player, in the time zone of the browser: the daily run
@@ -35,7 +36,7 @@ const localDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.get
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken, date: localDate},
-  hooks: {...colocatedHooks, Anim},
+  hooks: {...colocatedHooks, Anim, Busy},
 })
 
 // Show progress bar on live navigation and form submits

@@ -17,6 +17,8 @@ defmodule GoWeb.PuzzleLive do
 
   use GoWeb, :live_view
 
+  require Logger
+
   alias Go.{Board, Library, Play, Progress, Puzzles, Runs, Score}
   alias GoWeb.{BoardComponents, Worlds}
 
@@ -42,6 +44,8 @@ defmodule GoWeb.PuzzleLive do
         red_delay: Application.get_env(:go, :red_delay, 700),
         watch_delay: Application.get_env(:go, :watch_delay, 900),
         story_delay: Application.get_env(:go, :story_delay, 500),
+        sync_after: Application.get_env(:go, :sync_after, 5_000),
+        since: 0,
         score: nil,
         final: nil,
         moment: nil,
@@ -132,6 +136,28 @@ defmodule GoWeb.PuzzleLive do
   end
 
   def handle_event("hint", _, socket), do: {:noreply, update_play(socket, &Play.hint/1)}
+
+  # The safety net: the page showed a busy screen ("Red is thinking…") for
+  # `:sync_after` ms with no change (see the hook Busy in
+  # assets/js/busy.mjs). If the server still waits on the same step, and
+  # that time is over on the server too, it does the step now and sends
+  # the new state. A player never waits forever.
+  def handle_event("sync", %{"step" => step}, %{assigns: %{play: %Play{} = play}} = socket) do
+    waited = System.monotonic_time(:millisecond) - socket.assigns.since
+
+    if Play.busy?(play) and step == to_string(socket.assigns.step) and
+         waited >= socket.assigns.sync_after do
+      Logger.warning(
+        "A page waited #{waited} ms on #{play.puzzle.id} (#{busy_state(play)}); the server goes on"
+      )
+
+      {:noreply, unstick(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("sync", _, socket), do: {:noreply, socket}
 
   def handle_event("show_better", _, socket),
     do: {:noreply, update_play(socket, &Play.show_better/1)}
@@ -277,6 +303,32 @@ defmodule GoWeb.PuzzleLive do
     end
   end
 
+  # The step that the server waits on, done now (see the event "sync").
+  defp unstick(%{assigns: %{play: %Play{status: :thinking} = play}} = socket) do
+    socket
+    |> cancel_async(:think)
+    |> put_play(Play.think(play, budget: 0))
+    |> after_move()
+  end
+
+  defp unstick(%{assigns: %{play: %Play{status: :red_turn} = play}} = socket) do
+    socket |> assign(timer: nil) |> put_play(Play.red_step(play)) |> after_move()
+  end
+
+  defp unstick(%{assigns: %{play: %Play{replay: %{}} = play}} = socket) do
+    play = Play.watch_step(play)
+    socket = socket |> assign(timer: nil) |> put_play(play)
+
+    if play.replay,
+      do: schedule(socket, :watch_step, socket.assigns.watch_delay),
+      else: socket
+  end
+
+  defp unstick(socket), do: socket
+
+  defp busy_state(%Play{replay: %{}}), do: "replay"
+  defp busy_state(%Play{status: status}), do: status
+
   # No delay: run all steps at once (for the tests).
   defp schedule(socket, name, 0), do: run_now(socket, name)
 
@@ -320,6 +372,7 @@ defmodule GoWeb.PuzzleLive do
     assign(socket,
       play: play,
       step: socket.assigns.step + 1,
+      since: System.monotonic_time(:millisecond),
       puzzle: play.puzzle,
       world_text: Worlds.get(play.puzzle.world),
       run_total: if(socket.assigns.mode == :run, do: length(current_stage(socket).puzzles))
@@ -876,7 +929,17 @@ defmodule GoWeb.PuzzleLive do
             <span id="moves-left">{moves_left(@play)}</span>
             <span :if={@puzzle.hide_roads} class="hidden-roads">Count the roads yourself!</span>
           </p>
-          <p class={["msg", @busy && "busy"]} id="message" aria-live="polite">{@play.message}</p>
+          <p
+            class={["msg", @busy && "busy"]}
+            id="message"
+            aria-live="polite"
+            phx-hook="Busy"
+            data-busy={to_string(@busy)}
+            data-step={@step}
+            data-wait={@sync_after}
+          >
+            {@play.message}
+          </p>
           <BoardComponents.board
             board={@board}
             look={@look}

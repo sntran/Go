@@ -124,7 +124,7 @@ class Player {
       for (const puzzle of stage) {
         if (stop) return;
         await pause();
-        if (Math.random() < 0.4) {
+        if (puzzle.wrong && Math.random() < 0.4) {
           stats.wrong++;
           await this.tap(puzzle.wrong, true);
         } else {
