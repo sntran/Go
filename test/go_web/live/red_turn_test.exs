@@ -100,4 +100,36 @@ defmodule GoWeb.RedTurnTest do
     html = click(view, "skip")
     assert text(html, "#kicker") =~ "Puzzle 1 of"
   end
+
+  # The stage animation plays in the browser: the server sends the moves
+  # one time, and goes on when the hook says "anim_done".
+  test "the server sends the moves of the animation one time, and anim_done goes to the puzzle", %{
+    conn: conn
+  } do
+    {:ok, view, html} = live(conn, ~p"/run/#{Go.Runs.new_code()}")
+    [_, id, steps] = Regex.run(~r/id="(anim-\d+)"[^>]*data-steps="([^"]*)"/, html)
+    steps = steps |> String.replace("&quot;", "\"") |> JSON.decode!()
+    assert steps != []
+    assert Enum.all?(steps, fn [color, _] -> color in ["blue", "red"] end)
+
+    # No render for each move: the board of the server stays the same.
+    Process.sleep(@delay * 3)
+    assert render(view) =~ id
+
+    # An old id does nothing.
+    render_hook(view, "anim_done", %{"id" => "anim-0"})
+    assert text(render(view), "#message") == "Watch the game…"
+
+    render_hook(view, "anim_done", %{"id" => id})
+    assert text(render(view), "#kicker") =~ "Puzzle 1 of"
+  end
+
+  test "with no word from the hook, the server goes on after the time of the animation", %{
+    conn: conn
+  } do
+    {:ok, view, html} = live(conn, ~p"/run/#{Go.Runs.new_code()}")
+    [_, steps] = Regex.run(~r/data-steps="([^"]*)"/, html)
+    n = steps |> String.replace("&quot;", "\"") |> JSON.decode!() |> length()
+    eventually(view, &(text(&1, "#kicker") =~ "Puzzle 1 of"), div(@delay * n + 6_000, 25))
+  end
 end

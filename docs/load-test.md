@@ -114,9 +114,32 @@ the limit):
 What did not help: the allocator flag `-Mea min` (malloc for all memory),
 and a lower log level.
 
-The 79 MB at the start come mostly from the data: the bank and the newest
-library are JSON (the library file is 1.25 MB with the full books), and
-the decode makes a peak. The VM is 37 MB before it.
+## The memory at the start
+
+The VM is 37 MB when it is ready (before the data). Measured with
+`wrangler dev`, from the log lines of beam.com (steps of 8 MB):
+
+| When | Before | Now |
+|---|---:|---:|
+| After the start (the bank and the newest library are loaded) | 79 MB | 58 MB |
+| After the home page | 79 MB | 58 MB |
+| After the first run page (with the stage animation) | 79 MB | 58 MB |
+
+What changed:
+
+- The library and the bank are in the Erlang term format
+  (`term_to_binary`), not JSON. The moves of a story are packed (one byte
+  for each move), and each book stays as bytes until a puzzle needs it.
+  The decode makes no big temporary peak. The files are smaller too:
+  1.2 MB in place of 1.25 MB for a library version, and 96 KB in place of
+  452 KB for the bank.
+- The server loads a library version only when a run needs it: at the
+  start, only the newest version. A link to a run of an old version loads
+  that version.
+- The daily guard reads only the head of a library file (its version and
+  its daily_from), not the stories.
+- The stage animation plays in the browser (see below): the first run
+  page does not add memory.
 
 ## What could fix the memory (your decision)
 

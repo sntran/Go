@@ -189,6 +189,13 @@ defmodule GoWeb.PuzzleLive do
     {:noreply, finish_anim(socket)}
   end
 
+  # The hook Anim played all moves of the animation (in the browser).
+  def handle_event("anim_done", %{"id" => id}, %{assigns: %{anim: %{id: id}}} = socket) do
+    {:noreply, finish_anim(socket)}
+  end
+
+  def handle_event("anim_done", _, socket), do: {:noreply, socket}
+
   def handle_event("next_stage", _, %{assigns: %{mode: :run, phase: :stage_end}} = socket) do
     {:noreply, next_stage(socket)}
   end
@@ -246,12 +253,10 @@ defmodule GoWeb.PuzzleLive do
       else: {:noreply, socket}
   end
 
-  def handle_info({:story_step, ref}, %{assigns: %{timer: ref, anim: %{}}} = socket) do
-    socket = socket |> assign(timer: nil) |> anim_step()
-
-    if socket.assigns.anim.steps == [],
-      do: {:noreply, finish_anim(socket)},
-      else: {:noreply, schedule(socket, :story_step, socket.assigns.story_delay)}
+  # The hook did not tell the end of the animation in time (no JavaScript,
+  # or a lost message): the server goes on by itself.
+  def handle_info({:anim_timeout, ref}, %{assigns: %{timer: ref, anim: %{}}} = socket) do
+    {:noreply, finish_anim(socket)}
   end
 
   # A timer of a play that is gone.
@@ -280,8 +285,6 @@ defmodule GoWeb.PuzzleLive do
     Process.send_after(self(), {name, ref}, delay)
     assign(socket, timer: ref)
   end
-
-  defp run_now(socket, :story_step), do: finish_anim(socket)
 
   defp run_now(socket, :watch_step) do
     play =
@@ -520,44 +523,39 @@ defmodule GoWeb.PuzzleLive do
     socket |> save_place(place) |> load_stage() |> resume()
   end
 
-  # Plays the moves of the main line from `from` to `to` on the board.
+  # Plays the moves of the main line from `from` to `to` on the board. The
+  # server renders the first board one time, with all moves; the hook Anim
+  # plays them in the browser, and sends "anim_done" at the end. The server
+  # renders nothing for each move (see docs/load-test.md). The place of
+  # the player is already after the animation. With no delay (the tests),
+  # the animation ends at once.
   defp start_anim(socket, from, to, then, title) do
     story = current_stage(socket).story
     board = Library.board_at(story, from)
     steps = story.moves |> Enum.slice(from, to - from)
-
-    socket
-    |> assign(
-      phase: :anim,
-      play: nil,
-      anim: %{board: board, steps: steps, falls: [], marks: %{}, then: then, title: title},
-      timer: nil
-    )
-    |> schedule(:story_step, socket.assigns.story_delay)
-  end
-
-  defp anim_step(%{assigns: %{anim: %{steps: [{color, move} | rest]} = a}} = socket) do
-    {:ok, board, captured} = Board.play(a.board, color, move)
-    marks = if move == :pass, do: %{}, else: %{move => color}
+    delay = socket.assigns.story_delay
 
     anim = %{
-      a
-      | board: board,
-        steps: rest,
-        falls: Enum.map(captured, &{&1, Board.other(color)}),
-        marks: marks
+      board: board,
+      steps: steps,
+      then: then,
+      title: title,
+      id: "anim-#{System.unique_integer([:positive])}"
     }
 
-    assign(socket, anim: anim, step: socket.assigns.step + 1)
+    socket = assign(socket, phase: :anim, play: nil, anim: anim, timer: nil)
+
+    if delay == 0 or steps == [] do
+      finish_anim(socket)
+    else
+      # A safety net: the server goes on by itself after the time of the
+      # animation and 5 s more.
+      schedule(socket, :anim_timeout, delay * length(steps) + 5_000)
+    end
   end
 
-  defp anim_step(socket), do: socket
-
-  defp finish_anim(%{assigns: %{anim: %{steps: [_ | _]}}} = socket),
-    do: socket |> anim_step() |> finish_anim()
-
   defp finish_anim(%{assigns: %{anim: %{then: then}}} = socket) do
-    socket = assign(socket, timer: nil)
+    socket = assign(socket, timer: nil, anim: nil)
 
     case then do
       {:puzzle, k} -> start_puzzle(socket, k)
@@ -566,6 +564,18 @@ defmodule GoWeb.PuzzleLive do
   end
 
   defp finish_anim(socket), do: socket
+
+  # The moves of an animation, for the hook: [color, [row, column]] or
+  # [color, "pass"].
+  defp anim_steps(steps) do
+    JSON.encode!(
+      for {color, move} <- steps,
+          do: [color, if(move == :pass, do: "pass", else: Tuple.to_list(move))]
+    )
+  end
+
+  defp anim_stones(board),
+    do: JSON.encode!(for({{r, c}, color} <- Enum.sort(board.stones), do: [r, c, color]))
 
   defp stage_stars(results), do: results |> Enum.map(& &1.stars) |> Enum.sum()
 
@@ -600,13 +610,18 @@ defmodule GoWeb.PuzzleLive do
         </section>
         <section class="play">
           <p class="msg busy" id="message" aria-live="polite">Watch the game…</p>
-          <BoardComponents.board
-            board={@anim.board}
-            look={@look}
-            falls={@anim.falls}
-            marks={@anim.marks}
-            step={@step}
-          />
+          <div
+            id={@anim.id}
+            phx-hook="Anim"
+            phx-update="ignore"
+            data-steps={anim_steps(@anim.steps)}
+            data-stones={anim_stones(@anim.board)}
+            data-size={@anim.board.size}
+            data-delay={@story_delay}
+            data-look={@look}
+          >
+            <BoardComponents.board board={@anim.board} look={@look} step={@step} />
+          </div>
           <div class="row" id="actions">
             <button type="button" class="pill" id="skip" phx-click="skip">Skip</button>
           </div>
