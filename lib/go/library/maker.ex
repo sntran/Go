@@ -71,7 +71,7 @@ defmodule Go.Library.Maker do
   @mistake_min 0.005
   @opening_min 0.01
   @opening_choices 6
-  @opening_loss 3
+  @opening_loss 1.5
   @opening_key 10
   @opening_max 2
   @recheck_below 8

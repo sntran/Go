@@ -33,6 +33,10 @@ defmodule Go.Progress do
   @table __MODULE__
   @learned_days 3
 
+  # The keys of the data. A tuple key has one of these atoms first:
+  # {:since_review, world} and {:run, code}.
+  @keys [:results, :look, :current_run, :stage_results]
+
   defmodule Attempt do
     @moduledoc "One attempt at a puzzle."
     defstruct [:player, :puzzle_id, :moves, :result, :stars, :at]
@@ -53,8 +57,10 @@ defmodule Go.Progress do
       rows =
         Repo.all(from p in "progress", where: p.player == ^player, select: {p.key, p.value})
 
-      for {key, value} <- rows do
-        :ets.insert(@table, {{player, decode(key)}, decode(value)})
+      keys = Map.new(@keys, &{key_text(&1), &1})
+
+      for {text, value} <- rows, Map.has_key?(keys, text) or String.starts_with?(text, "{") do
+        :ets.insert(@table, {{player, key_from(text, keys)}, decode(value)})
       end
 
       :ets.insert(@table, {{player, :__loaded__}, true})
@@ -175,7 +181,7 @@ defmodule Go.Progress do
       }
 
       Repo.insert_all("attempts", [
-        %{player: player, puzzle_id: puzzle.id, value: :erlang.term_to_binary(attempt)}
+        %{player: player, puzzle_id: puzzle.id, value: encode(attempt)}
       ])
 
       put(player, :results, update(results(player), puzzle.id, result, attempt.stars, today))
@@ -225,7 +231,7 @@ defmodule Go.Progress do
 
     Repo.insert_all(
       "progress",
-      [%{player: player, key: :erlang.term_to_binary(key), value: :erlang.term_to_binary(value)}],
+      [%{player: player, key: key_text(key), value: encode(value)}],
       on_conflict: {:replace, [:value]},
       conflict_target: [:player, :key]
     )
@@ -238,7 +244,33 @@ defmodule Go.Progress do
     unless :ets.member(@table, {player, :__loaded__}), do: GenServer.call(__MODULE__, {:load, player})
   end
 
-  # The data is from this app only. The atoms of the data are atoms of the
-  # code, so `:safe` is enough.
-  defp decode(binary), do: :erlang.binary_to_term(binary, [:safe])
+  # The key as text: the same text in each version of Erlang.
+  defp key_text(key), do: inspect(key)
+
+  defp key_from(text, keys) do
+    case Map.fetch(keys, text) do
+      {:ok, key} -> key
+      :error -> tuple_key(text)
+    end
+  end
+
+  # {:since_review, :capture} or {:run, "2-8F3K"}.
+  defp tuple_key(text) do
+    [_, name, arg] = Regex.run(~r/^\{:(\w+), (.+)\}$/, text)
+    name = String.to_atom(name)
+
+    arg =
+      case arg do
+        ":" <> atom -> String.to_atom(atom)
+        _ -> arg |> String.trim("\"")
+      end
+
+    {name, arg}
+  end
+
+  # Only this server writes the data (never the browser). The decode does
+  # not use `:safe`: after a restart, a VM that loads its modules when it
+  # needs them does not have all atoms of the data yet.
+  defp encode(term), do: term |> :erlang.term_to_binary() |> Base.encode64()
+  defp decode(text), do: text |> Base.decode64!() |> :erlang.binary_to_term()
 end
