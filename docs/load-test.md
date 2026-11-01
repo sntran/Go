@@ -1,14 +1,16 @@
 # The load test: how many players one Durable Object serves
 
 All players use one Durable Object, and one VM (BEAM in WebAssembly) in
-it. This test measures how many players it serves, after the books made
-each tap a lookup (no search during play).
+it. This test measures how many players it serves. The real limit is the
+memory: an isolate of a Worker has 128 MB, for the VM and for the modules
+of the Worker (`app.com`). `wrangler dev` does not apply this limit, so
+the test applies it.
 
 ## How I measured
 
 - `wrangler dev` (workerd on my computer: 4 cores of an Intel Xeon at 2.1
-  GHz) with the `app.com` of this commit. The Durable Object runs on one
-  thread.
+  GHz) with the `app.com` and the `wrangler.jsonc` of this commit. The
+  Durable Object runs on one thread.
 - `scripts/load/run.mjs` starts N players at the same time. Each player
   opens a run over the WebSocket of LiveView, as a browser does, and taps
   a move every 3 to 10 seconds: the moves of the shown answer (60%), or
@@ -16,143 +18,169 @@ each tap a lookup (no search during play).
   stage". The data (the answers of the runs) comes from
   `scripts/load/data.exs`: only this test tool knows them, never the
   browser.
-- Each N runs 90 seconds, on a new Worker (clean state).
+- `scripts/load/series.mjs` runs a list of N. For each N, it starts a new
+  `wrangler dev` (a clean state), runs the players for 90 s, and reads
+  the peak memory of the VM from the log lines of beam.com (`beam: memory
+  N MB`, in steps of 8 MB). The memory of the isolate is this peak plus
+  the size of `app.com`. **A step fails when the isolate is over 128 MB**,
+  and the tool reports the largest N under the limit.
 - The time from the tap to the blue stone is the time to the reply of the
   tap. The time to Red's reply is the time to the next push of the
-  server; Red waits 700 ms on purpose (`:red_delay`), so the table also
-  gives this time less the 700 ms.
-- CPU: the CPU time of the workerd process of the Worker, as a percent of
-  one core. Memory: the memory of the VM, from the log lines `beam: memory
-  N MB (a new peak of this VM)` of beam.com. It never shrinks, so it is the
-  peak.
+  server; Red waits 700 ms on purpose (`:red_delay`), so the table gives
+  this time less the 700 ms.
 
 ```sh
+npm run build
 OUT=/tmp/load-data.json mix run scripts/load/data.exs
-npx wrangler dev                       # in another shell
-node scripts/load/run.mjs --players 100 --seconds 90 --data /tmp/load-data.json --pid <workerd pid>
+node scripts/load/series.mjs --players 1,3,5,10,20 --seconds 90 --data /tmp/load-data.json --all
 ```
 
 ## Results
 
-| Players | Taps | Tap → blue stone, p50 / p95 | Red's reply less 700 ms, p50 / p95 | Join (all at once), p50 / p95 | Other actions, p95 | CPU (mean of one core) | VM memory (peak) | Errors |
-|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| 10 | 52 | 18 / 34 ms | 24 / 40 ms | 0.43 / 0.44 s | 59 ms | 5% | 260 MB | none |
-| 50 | 264 | 19 / 39 ms | 24 / 47 ms | 1.5 / 1.8 s | 0.8 s | 23% | 632 MB | none |
-| 100 | 527 | 25 / 114 ms | 34 / 114 ms | 3.1 / 5.3 s | 1.9 s | 49% | 1,042 MB | 4 missed Red replies |
-| 150 | 764 | 29 / 173 ms | 43 / 163 ms | 4.3 / 6.5 s | 2.0 s | 67% | 1,443 MB | 9 missed Red replies |
-| 200 | 942 | 108 / 1,335 ms | 123 / 1,457 ms | 6.1 / 10.3 s | 3.5 s | 87% | 1,827 MB | 10 missed Red replies |
-| 500 | 797 | 6.7 / 15.1 s | 8.5 / 14.8 s | 23 / 68 s | 10.1 s | 96% | (process: 3.8 GB) | joins crashed, time-outs, 504 |
+With `app.com` for WebAssembly only (11.7 MiB) and `BEAM_ERL_FLAGS` =
+`-Mea min` (see below):
 
-"Other actions" are "Continue the story", "Skip" and "Next stage". A
-"missed Red reply" means that the script saw no push of the server in
-15 s after a tap that has a Red reply (about 1% of these taps).
+| Players | Taps | Tap → blue stone, p95 | Red's reply less 700 ms, p95 | Join, p95 | VM peak | Isolate (VM + app.com) | 128 MB | Errors |
+|---:|---:|---:|---:|---:|---:|---:|---|---|
+| 1 | 6 | 24 ms | 34 ms | 0.14 s | 57 MB | 69 MB | pass | none |
+| 3 | 16 | 18 ms | 28 ms | 0.16 s | 90 MB | 102 MB | pass | none |
+| 5 | 27 | 17 ms | 21 ms | 0.24 s | 111 MB | 123 MB | pass | none |
+| 10 | 54 | 18 ms | 25 ms | 0.43 s | 163 MB | 175 MB | **fail** | none |
+| 20 | 107 | 17 ms | 28 ms | 0.95 s | 275 MB | 287 MB | **fail** | none |
 
-## The answer
+**The largest N under the limit: 5 players who start at the same time.**
+The margin at 5 is small (123 of 128 MB). Players who come one after the
+other need less: 10 run pages, opened one after the other, took the VM
+to 57 MB.
 
-**By the time of a tap: 150 players.** With 150 players who all start at
-the same time, the 95th percentile of the tap is 173 ms, and of Red's
-reply 163 ms after its pause. With 200 players, the single thread of the
-Durable Object is nearly full (87% of one core), and the 95th percentile
-is 1.3 s.
+The same series before the changes of this round (`app.com` of 36 MiB,
+the allocators of ERTS):
 
-**But the memory is the real limit, and it is far lower.** On Cloudflare,
-an isolate has 128 MB, and `wrangler dev` does not apply this limit. Over
-128 MB, Cloudflare resets the Durable Object: all players lose the
-connection, and the VM starts again. The VM needs 79 MB after it loads the
-bank and the newest library. Small groups that start at the same time:
+| Players | VM peak | Isolate | 128 MB |
+|---:|---:|---:|---|
+| 1 | 94 MB | 130 MB | fail |
+| 3 | 119 MB | 155 MB | fail |
+| 5 | 155 MB | 191 MB | fail |
+| 10 | 203 MB | 239 MB | fail |
+| 20 | 329 MB | 365 MB | fail |
+| 50 | 653 MB | 689 MB | fail |
 
-| Players | VM memory (peak) |
-|---:|---:|
-| 1 | 79 MB |
-| 3 | 125 MB |
-| 5 | 138 MB |
-| 10 | 260 MB |
+So before, not even one player stayed under the limit for 90 s.
 
-So today one Durable Object serves only about 3 players who start
-together. The docs of beam.com say that the 128 MB also hold the modules
-of the Worker (`app.com`, 37.6 MB), so the real number can be lower. I did
-not test on Cloudflare itself. Players who start one after the other need
-less: in a test before the last changes, 5 players and then 20 more
-stayed at 148 MB.
+The CPU is not the limit: with 20 players, the taps and Red's replies
+stay under 30 ms at the 95th percentile, and the earlier test (below)
+reached the limit of one thread at about 200 players.
 
-## Where the memory goes
+## The missed Red replies
 
-I looked inside the VM (a debug page in a test build, not in the
-repository):
+At 100 to 200 players, about 1% of the taps got no reply in 15 s. The
+cause was in the test tool, not in the server: when a puzzle had fewer
+wrong moves than the number of the run, `scripts/load/data.exs` used the
+answer as the "wrong" tap. For 23 of the 360 puzzles of the test, the
+answer is one move, so that tap solved the puzzle, and Red does not reply
+to a solved puzzle. The tool now takes a real wrong move (or none). A
+check of all 360 puzzles of the test runs on the server: each wrong tap
+and each step of each answer line gets its reply of Red. In the series
+above, no tap waited for Red.
 
-- Erlang itself used only about 34 MB (`erlang:memory()`), also after 50
-  run pages. Natively, an open run page needs about 0.14 MB after a
-  collection, and 50 open pages need 13 MB.
-- The memory of the VM grows in bursts: when many pages render at the
-  same time, their heaps grow together, and on WebAssembly the VM keeps
-  the peak forever. Later players reuse it only partly: 50 run pages, all
-  closed, then 50 more run pages, grew the VM from 403 MB to 646 MB.
-- The main cause is the animation at the start of a stage: the server
-  renders the whole 9x9 board for each move (every 500 ms). 50 run pages
-  needed about 400 MB with the animation, and 149 MB without its steps.
-  50 pages of the worlds (5x5 boards, no animation) needed 117 MB.
-- The database is not a cause: 600 reads and writes did not change the
-  memory.
-
-What I changed, and kept (each one is right on its own, but none solves
-the limit):
-
-- A run page keeps only its stage, not the whole run, and the first
-  render (before the WebSocket) does not make the run.
-- Pages hibernate after 1 s with no message (`hibernate_after`), and each
-  process cleans its old heap after 10 collections (`fullsweep_after`).
-- The library, the bank and the tiers of the runs are made one time,
-  under a lock (`Go.Cache`): before, pages that started together each
-  made their own copy.
-- One Bandit acceptor (the advice of beam.com: the host has one listener).
-- The database pool has 4 connections, and a statement waits up to 2 s:
-  before, with 100 players, statements were dropped after 100 ms and pages
-  crashed.
-- The production log level is `warning` (each log line costs CPU in the
-  one VM).
-
-What did not help: the allocator flag `-Mea min` (malloc for all memory),
-and a lower log level.
+The safety net: if the page shows a busy screen ("Red is thinking…") for
+5 s with no change, the hook `Busy` (`assets/js/busy.mjs`) sends "sync",
+and again after each 5 s. If the server still waits on the same step,
+and its time is over, the server does the step now (Red's move, the
+search with no more time, or the next move of a replay), sends the new
+state, and logs a warning. Tests: `test/go_web/live/sync_test.exs` (the
+server) and `test/go_web/busy_js_test.exs` (the hook). In a browser, with
+the timer of Red set to 60 s, Red's stone came after the wait of the
+hook.
 
 ## The memory at the start
 
-The VM is 37 MB when it is ready (before the data). Measured with
-`wrangler dev`, from the log lines of beam.com (steps of 8 MB):
+Measured with `wrangler dev`, from the log lines of beam.com:
 
-| When | Before | Now |
+| When | At the start of this round | Now |
 |---|---:|---:|
-| After the start (the bank and the newest library are loaded) | 79 MB | 58 MB |
-| After the home page | 79 MB | 58 MB |
-| After the first run page (with the stage animation) | 79 MB | 58 MB |
+| The VM is ready (before the data) | 37 MB | 25 MB |
+| After the start (the bank and the newest library are loaded) | 79 MB | 40 MB |
+| After the home page | 79 MB | 40 MB |
+| After the first run page (with the stage animation) | 79 MB | 40 MB |
+| `app.com` | 36 MiB | 11.7 MiB |
+| The isolate after the start | about 115 MB | about 52 MB |
 
-What changed:
+## What changed in this round
 
-- The library and the bank are in the Erlang term format
-  (`term_to_binary`), not JSON. The moves of a story are packed (one byte
-  for each move), and each book stays as bytes until a puzzle needs it.
-  The decode makes no big temporary peak. The files are smaller too:
-  1.2 MB in place of 1.25 MB for a library version, and 96 KB in place of
-  452 KB for the bank.
-- The server loads a library version only when a run needs it: at the
-  start, only the newest version. A link to a run of an old version loads
-  that version.
-- The daily guard reads only the head of a library file (its version and
-  its daily_from), not the stories.
-- The stage animation plays in the browser (see below): the first run
-  page does not add memory.
+1. **The data in the Erlang term format.** The library and the bank are
+   `term_to_binary` files, not JSON. The moves of a story are packed (one
+   byte for each move), and each book stays as bytes until a puzzle needs
+   it. The server loads a library version only when a run needs it (at
+   the start, only the newest one), and the daily guard reads only the
+   head of a file. The start went from 79 MB to 58 MB.
+2. **The stage animation plays in the browser.** The server sends the
+   moves of the stage one time, and the hook `Anim`
+   (`assets/js/anim.mjs`, with `assets/js/board.mjs`) plays them with the
+   same SVG as the server. The server state jumps to the end. A test
+   compares the SVG of the browser with the SVG of the server for real
+   positions, in both looks. The first run page no longer adds memory
+   (before: +19 MB).
+3. **Small board diffs.** Each list of the board is a keyed comprehension,
+   with all values of an item as text. A tap now sends about 2.4 KB in
+   place of 29 KB, and the reply of Red about 4.1 KB in place of 30.5 KB
+   (`test/go_web/live/board_diff_test.exs`).
+4. **`app.com` for WebAssembly only** (`--target wasm32` in
+   `scripts/app-com.sh`): 11.7 MiB in place of 36 MiB. The Worker keeps
+   this file in its isolate. This file does not run natively; on a
+   computer, use `mix phx.server`.
+5. **`BEAM_ERL_FLAGS` = `-Mea min`** (in `wrangler.jsonc`): the VM uses
+   `malloc` for all its memory, not the allocators of ERTS. With 5 players
+   for 60 s, the VM peak was 95 MB with this flag, and 179 MB without it.
+   There is no `erlang:memory/0` then (the default poller of
+   telemetry_poller is already off in `config/prod.exs`).
 
-## What could fix the memory (your decision)
+Other flags that I tried (5 players, 60 s, VM at the start → peak):
 
-1. Play the animation in the browser: the server sends the moves of the
-   stage one time, and a small script moves the stones. The look stays
-   the same. I expect this to cut the memory of a stage start by more than
-   half (see the 149 MB above).
-2. Send smaller diffs of the board (stable keys for the points and the
-   stones, so that LiveView sends only the changed ones).
-3. Keep the library as Erlang terms (`term_to_binary`) in place of JSON,
-   so that the start needs less memory.
-4. Ask BEAM.com why the memory of the VM grows so far above the memory of
-   Erlang under many short renders (perhaps the allocator in
-   WebAssembly), and test a fix there.
-5. More Durable Objects (one for each group of players). You said you
-   will decide this after the numbers.
+| `BEAM_ERL_FLAGS` | Start | Peak |
+|---|---:|---:|
+| none (the host gives `-MBsbct 8192 -MHsbct 8192`) | 58 MB | 179 MB |
+| `-Mea min` | 41 MB | 95 MB |
+| `-MMmcs 0` (no cache of segments) | 75 MB | 204 MB |
+| smaller carriers (`-MBlmbcs 1024 -MHlmbcs 1024 -MBsbct 1024 -MHsbct 1024 -MBsmbcs 256 -MHsmbcs 256`) | 56 MB | 182 MB |
+| a super carrier of 64 MB (`-MMscs 64 -MMsco true -MMscrpm false`) | 91 MB | 123 MB |
+
+## Where the memory goes
+
+With the allocators of ERTS, one player for 90 s grew the VM from 58 MB
+to 94 MB. In the same time, Erlang itself (`erlang:memory()`) went from
+31 MB to 37 MB, and the carriers of the allocators from 33 MB to 53 MB
+(later 41 MB). Natively, the process of a run page peaks at about 0.5 MB
+during a join and a tap. So most of the growth is in the VM, not in the
+app: memory that Erlang frees does not come back for later use.
+`docs/beam-memory.md` is a report for BEAM.com with a small program that
+shows this.
+
+With `-Mea min`, the VM still grows about 14 MB for each player who
+starts at the same time (5 players: 41 MB to 111 MB). I could not see
+inside it (no `erlang:memory/0` with this flag).
+
+## The earlier test (time of a tap, before this round)
+
+This test ran before the changes above, with up to 500 players, and
+measured the time of a tap. The memory columns are old.
+
+| Players | Taps | Tap → blue stone, p50 / p95 | Red's reply less 700 ms, p50 / p95 | Join (all at once), p50 / p95 | CPU (mean of one core) | VM memory (peak) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 52 | 18 / 34 ms | 24 / 40 ms | 0.43 / 0.44 s | 5% | 260 MB |
+| 50 | 264 | 19 / 39 ms | 24 / 47 ms | 1.5 / 1.8 s | 23% | 632 MB |
+| 100 | 527 | 25 / 114 ms | 34 / 114 ms | 3.1 / 5.3 s | 49% | 1,042 MB |
+| 150 | 764 | 29 / 173 ms | 43 / 163 ms | 4.3 / 6.5 s | 67% | 1,443 MB |
+| 200 | 942 | 108 / 1,335 ms | 123 / 1,457 ms | 6.1 / 10.3 s | 87% | 1,827 MB |
+| 500 | 797 | 6.7 / 15.1 s | 8.5 / 14.8 s | 23 / 68 s | 96% | (process: 3.8 GB) |
+
+By the time of a tap, one Durable Object serves about 150 players. By the
+memory, it serves 5 who start together.
+
+## Not tested yet
+
+- Cloudflare itself. `wrangler dev` does not apply the 128 MB, so this
+  test applies it from the log lines. A separate Worker (`go-staging`)
+  would show the real limit with 1, 3, 5, 10 and 20 players.
+- More Durable Objects (one for each group of players): not done, as you
+  asked.

@@ -22,4 +22,8 @@ beam mix assets.deploy
 # mix release keeps the directories of old versions in lib/. Remove them.
 rm -rf _build/prod/rel/go
 RELEASE_ERTS=false beam mix release --overwrite
-beam _build/prod/rel/go -o app.com
+# --target wasm32: only the part that the WebAssembly runtime reads (no
+# native program). The Worker keeps app.com in the memory of its isolate,
+# so the VM gets about 25 MB more of the 128 MB. This app.com does not
+# run natively; use mix phx.server on a computer.
+beam _build/prod/rel/go -o app.com --target wasm32

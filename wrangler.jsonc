@@ -15,5 +15,12 @@
   "durable_objects": { "bindings": [{ "name": "BEAM", "class_name": "Beam" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Beam"] }],
   // A new deploy makes a new snapshot of the VM.
-  "version_metadata": { "binding": "BEAM_VERSION" }
+  "version_metadata": { "binding": "BEAM_VERSION" },
+  // -Mea min: the VM uses malloc for all its memory, not the allocators
+  // of ERTS. In WebAssembly the memory of the VM never shrinks, and with
+  // the allocators of ERTS it grew to about twice as much: 5 players took
+  // the VM to 179 MB, and 95 MB with this flag (docs/load-test.md). There
+  // is no erlang:memory/0 then (the default poller of telemetry_poller is
+  // off in config/prod.exs).
+  "vars": { "BEAM_ERL_FLAGS": "-Mea min" }
 }

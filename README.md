@@ -188,28 +188,29 @@ The plan is in [`docs/plans/story-runs.md`](docs/plans/story-runs.md).
 
 ## How many players one Durable Object serves
 
-The details are in [`docs/load-test.md`](docs/load-test.md). N players
-start a run at the same time, and tap every 3 to 10 seconds, on `wrangler
-dev`:
+The details are in [`docs/load-test.md`](docs/load-test.md). The real
+limit is the memory: an isolate on Cloudflare has 128 MB for the VM and
+`app.com`, and `wrangler dev` does not apply it. `scripts/load/series.mjs`
+starts N players at the same time on a new `wrangler dev` for each N,
+and a step fails when the VM peak plus `app.com` is over 128 MB:
 
-| Players | Tap → blue stone, p95 | Red's reply less its 700 ms pause, p95 | VM memory (peak) |
-|---:|---:|---:|---:|
-| 10 | 34 ms | 40 ms | 260 MB |
-| 50 | 39 ms | 47 ms | 632 MB |
-| 100 | 114 ms | 114 ms | 1,042 MB |
-| 150 | 173 ms | 163 ms | 1,443 MB |
-| 200 | 1,335 ms | 1,457 ms | 1,827 MB |
+| Players | Tap → blue stone, p95 | Red's reply less its 700 ms pause, p95 | VM peak | Isolate | 128 MB |
+|---:|---:|---:|---:|---:|---|
+| 1 | 24 ms | 34 ms | 57 MB | 69 MB | pass |
+| 3 | 18 ms | 28 ms | 90 MB | 102 MB | pass |
+| 5 | 17 ms | 21 ms | 111 MB | 123 MB | pass |
+| 10 | 18 ms | 25 ms | 163 MB | 175 MB | fail |
+| 20 | 17 ms | 28 ms | 275 MB | 287 MB | fail |
 
-- By the time of a tap, one Durable Object serves 150 players (the 95th
-  percentile is under 1 s); at 200, its one thread is nearly full.
-- By the memory, it serves far fewer: an isolate on Cloudflare has 128
-  MB, and `wrangler dev` does not apply this limit. 3 players who start
-  together already reach 125 MB. The main cause is the animation at the
-  start of a stage (the server renders the 9x9 board for each move), and
-  the memory of the VM never shrinks. `docs/load-test.md` lists what I
-  changed, and the options to fix it.
-
-
+- By the memory, one Durable Object serves 5 players who start at the
+  same time (before this round: not even 1). Players who come one after
+  the other need less.
+- By the time of a tap, it serves about 150 players (an earlier test).
+- The memory of the VM never shrinks, and in WebAssembly it grows far
+  above the memory that Erlang uses. `docs/beam-memory.md` is a report
+  for BEAM.com about this.
+- A page that waits 5 s on "Red is thinking…" asks the server for the
+  current state (the hook `Busy`), so a player never waits forever.
 
 ```sh
 mix go.gen.library --count 100   # 100 more stories
@@ -568,7 +569,8 @@ bytes.
   cores), so about 30 minutes for 300 stories, after the KataGo part
   (about 4 hours for the first 300 stories, see above).
 - `app.com` with the bank and both library versions: 37,640,528 bytes
-  (35.9 MiB, 21.0 MB with gzip). This is under the limit of 64 MiB.
+  (35.9 MiB, 21.0 MB with gzip). This is under the limit of 64 MiB. Now
+  `app.com` has only the part for WebAssembly: 12,284,027 bytes.
 
 `test/go/speed_test.exs` checks that each server action takes less than
 1 s, for each puzzle of the bank and for the puzzles of a run.
@@ -614,9 +616,9 @@ SQLite there, and gives `DATABASE_PATH`. These files do the deploy:
 | File | What |
 |---|---|
 | `package.json` | The dev dependencies `beam.com` and `wrangler`, and the scripts `build` and `deploy`. |
-| `scripts/app-com.sh` | The build: a release with no ERTS (`RELEASE_ERTS=false`), in one file `app.com`. |
+| `scripts/app-com.sh` | The build: a release with no ERTS (`RELEASE_ERTS=false`), in one file `app.com`, for WebAssembly only (`--target wasm32`, about 12 MB). |
 | `worker.js` | The entry of the Worker: `serve(app)` of the npm package `beam.com`. |
-| `wrangler.jsonc` | The Worker `go`, with one Durable Object that runs the VM. |
+| `wrangler.jsonc` | The Worker `go`, with one Durable Object that runs the VM, and `BEAM_ERL_FLAGS` = `-Mea min` (less memory, see `docs/load-test.md`). |
 
 The Worker is stateful: one Durable Object runs one VM for all the
 requests, as LiveView needs. The Worker needs no secret: the VM makes
@@ -642,7 +644,7 @@ puzzle after a restart of the Worker.
 
 ```sh
 npm install
-npm run build            # makes app.com (about 1 minute)
+npm run build            # makes app.com for the Worker (about 1 minute)
 npx wrangler login       # one time
 npm run deploy
 ```
