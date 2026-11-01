@@ -21,6 +21,9 @@ defmodule Mix.Tasks.Go.Gen.Library do
     * `--count`: the number of new stories (the default is 300).
     * `--katago`, `--model`: the paths of KataGo and of the network (else
       `$KATAGO` and `$KATAGO_MODEL`).
+    * `--fast-model`: a smaller network for the search of moments during a
+      game (else `$KATAGO_FAST_MODEL`, else none). The strong network still
+      plays all moves and checks each moment again after the game.
     * `--games`: the number of games in parallel (the default is 8).
     * `--visits`: the visits of the second check (the default is 16).
     * `--parts`: the parts file (the default is `library-parts.jsonl`).
@@ -40,6 +43,7 @@ defmodule Mix.Tasks.Go.Gen.Library do
     count: :integer,
     katago: :string,
     model: :string,
+    fast_model: :string,
     games: :integer,
     visits: :integer,
     parts: :string,
@@ -93,7 +97,15 @@ defmodule Mix.Tasks.Go.Gen.Library do
     count = Keyword.get(opts, :count, 300) - done
 
     {:ok, katago} = Go.Katago.start_link(katago: opts[:katago], model: opts[:model])
-    ev = {Go.Library.KatagoEvaluator, katago}
+    fast_model = opts[:fast_model] || System.get_env("KATAGO_FAST_MODEL")
+
+    fast =
+      if fast_model do
+        {:ok, fast} = Go.Katago.start_link(katago: opts[:katago], model: fast_model, threads: 2)
+        fast
+      end
+
+    ev = {Go.Library.KatagoEvaluator, %{strong: katago, fast: fast}}
     file = File.open!(parts, [:append, :utf8])
     start = System.monotonic_time(:second)
 
@@ -121,6 +133,7 @@ defmodule Mix.Tasks.Go.Gen.Library do
 
     File.close(file)
     Go.Katago.stop(katago)
+    if fast, do: Go.Katago.stop(fast)
   end
 
   defp read_lines(parts) do

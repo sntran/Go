@@ -1,7 +1,8 @@
 defmodule Go.SelfPlay do
   @moduledoc """
-  The computer plays a 9x9 game against itself. The story games come from
-  these games (see `Go.Stories`).
+  A simple computer plays a 9x9 game against itself. Only the tests use
+  these games (see `test/go/library_maker_test.exs`). The stories of the
+  game come from KataGo (see `Go.Library.Maker`).
 
   The moves of a side, in order of priority:
 

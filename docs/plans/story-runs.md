@@ -20,7 +20,9 @@ The mix task `mix go.gen.library` makes the library. It runs only on a computer 
 - KataGo plays the games, through its analysis engine (JSON over stdin and stdout, `Go.Katago`).
 - The code of KataGo is under an MIT-style license. The network is the official "KataGo Finetuned 9x9 Net (October 2023)", `kata9x9-b18c384nbt-20231025.bin.gz`, under the KataGo Neural Network License (MIT-style). The README tells both licenses, with the copyright notices, and where to download the files. The repository does not hold KataGo or the network.
 - The rules are Tromp-Taylor with komi 7: area scoring, as `Go.Score`, and the players capture the dead stones before they pass. Thus the area score at the end is the real score.
-- Speed on my computer (4 CPU cores, no GPU, the Eigen AVX2 build of KataGo 1.18.1): 31 network evaluations each second with the 9x9 network.
+- Speed on my computer (4 CPU cores, no GPU, the Eigen AVX2 build of KataGo 1.18.1): about 12 network evaluations each second with the 9x9 network, with all 4 cores. This is slow, thus:
+  - The 9x9 network plays all moves (1 evaluation for each move), and makes all final checks.
+  - During a game, a small official network (`kata1-b10c128`, about 30 times faster) makes the fast estimates that find the moments (1 evaluation, the same limit of 5 points). After the game, the 9x9 network checks each moment again with a search (16 visits).
 
 ### The games
 

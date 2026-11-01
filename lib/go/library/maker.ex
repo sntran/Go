@@ -15,7 +15,8 @@ defmodule Go.Library.Maker do
   a turn of Red, the maker tries the top moves of the Red policy. When one
   of them gives Blue a puzzle that passes all checks of a moment, Red plays
   it. Blue then plays the answer. When the solver finds a puzzle for Blue
-  on another turn, Blue plays its answer too.
+  on another turn, Blue plays its answer too. A moment comes at least 4
+  moves after the last one, or at least 2 moves after it on another group.
 
   ## The checks of a moment
 
@@ -23,10 +24,14 @@ defmodule Go.Library.Maker do
        move, and the tempting wrong moves fail. A moment needs at least one
        tempting wrong move.
     2. The moment matters: by the score estimate, the answer is better than
-       each tempting wrong move by at least 5 points.
+       each tempting wrong move by at least 5 points. The answer is also a good
+       move for the whole board: not more than 2 points worse than the top
+       move of the policy.
 
-  During the game, a fast estimate (1 visit) does check 2. When the game is
-  over, a search with more visits checks it again.
+  During the game, a fast estimate (1 visit) does check 2. With KataGo, a
+  smaller, fast network can make these estimates (see
+  `Go.Library.KatagoEvaluator`). When the game is over, a search of the
+  strong network with more visits checks it again.
 
   ## The checks of a story
 
@@ -52,6 +57,8 @@ defmodule Go.Library.Maker do
   @size 9
   @opening 8
   @gap 4
+  @min_gap 2
+  @near_best 2
   @max_moves 160
   @check_ms 10_000
   @book_ms 10_000
@@ -134,7 +141,9 @@ defmodule Go.Library.Maker do
       passes: 0,
       last: -@gap,
       found: [],
-      gave_up: false
+      gave_up: false,
+      checked: nil,
+      last_group: MapSet.new()
     }
 
     state = loop(state, ev, max)
@@ -159,12 +168,16 @@ defmodule Go.Library.Maker do
   defp loop(state, ev, max) do
     n = length(state.moves)
     line = Enum.reverse(state.moves)
-    open? = n >= @opening and n - state.last >= @gap
+    # A moment soon after the last one must be on another group.
+    open? = fn k -> k >= @opening and k - state.last >= @min_gap end
+    avoid = fn k -> if k - state.last < @gap, do: state.last_group, else: MapSet.new() end
 
     state =
       case state.color do
+        # The mistake search of Red checked this board already.
         :blue ->
-          case open? && find_moment(state.board, line, ev) do
+          case open?.(n) && state.board != state.checked &&
+                 find_moment(state.board, line, ev, avoid: avoid.(n)) do
             %{} = moment -> moment_move(state, n, moment)
             _ -> step(state, choose(Evaluator.policy(ev, line), n, state.board, :blue))
           end
@@ -172,9 +185,13 @@ defmodule Go.Library.Maker do
         :red ->
           policy = Evaluator.policy(ev, line)
 
-          case open? && mistake(state.board, line, policy, ev) do
-            {move, moment} -> state |> step(move) |> moment_move(n + 1, moment)
-            _ -> step(state, choose(policy, n, state.board, :red))
+          case open?.(n + 1) && mistake(state.board, line, policy, ev, avoid.(n + 1)) do
+            {move, moment} ->
+              state |> step(move) |> moment_move(n + 1, moment)
+
+            no ->
+              state = step(state, choose(policy, n, state.board, :red))
+              if no == nil, do: %{state | checked: top_board(state, line, policy)}, else: state
           end
       end
 
@@ -182,8 +199,15 @@ defmodule Go.Library.Maker do
   end
 
   defp moment_move(state, n, moment) do
+    group = Board.group(state.board, moment.puzzle.goal.target).stones
     state = step(state, moment.puzzle.answer)
-    %{state | last: n, found: [Map.put(moment, :index, n) | state.found]}
+
+    %{
+      state
+      | last: n,
+        last_group: MapSet.new(group),
+        found: [Map.put(moment, :index, n) | state.found]
+    }
   end
 
   defp step(state, move) do
@@ -224,11 +248,20 @@ defmodule Go.Library.Maker do
   defp pick([{m, w} | _], x) when x <= w, do: m
   defp pick([{_, w} | rest], x), do: pick(rest, x - w)
 
+  # The board after the top move of Red (the first move that the mistake
+  # search checks), when Red played it.
+  defp top_board(state, line, policy) do
+    case policy |> Enum.reject(&(elem(&1, 0) == :pass)) |> Enum.max_by(&elem(&1, 1), fn -> nil end) do
+      {top, _p} -> if line ++ [{:red, top}] == Enum.reverse(state.moves), do: state.board
+      nil -> nil
+    end
+  end
+
   # The top moves of Red. The first one that gives Blue a good moment.
   # A move that is not the top move is a mistake: Red makes it only when
   # Blue does not lead by more than the cap after the answer, so that the
   # game stays close.
-  defp mistake(board, line, policy, ev) do
+  defp mistake(board, line, policy, ev, avoid) do
     policy
     |> Enum.filter(fn {m, p} -> m != :pass and p >= @mistake_min end)
     |> Enum.sort_by(fn {_m, p} -> -p end)
@@ -238,7 +271,7 @@ defmodule Go.Library.Maker do
       cap = if i == 0, do: :infinity, else: @cap
 
       with {:ok, next, _} <- Board.play(board, :red, move),
-           %{} = moment <- find_moment(next, line ++ [{:red, move}], ev, cap: cap) do
+           %{} = moment <- find_moment(next, line ++ [{:red, move}], ev, cap: cap, avoid: avoid) do
         {move, moment}
       else
         _ -> nil
@@ -251,24 +284,32 @@ defmodule Go.Library.Maker do
   @doc """
   Finds a moment on the board, with Blue to play: a capture or an escape
   puzzle that passes the puzzle checks, and whose answer is better than
-  each tempting wrong move by #{@min_diff} points or more. Gives
+  each tempting wrong move by #{@min_diff} points or more. The answer must
+  also be a good move for the whole board: not more than #{@near_best} points
+  worse than the top move of the policy. Gives
   `%{puzzle, report, diffs, score}`, or nil. `score` is the estimate after
   the answer.
 
   The fast checks come first: one correct move in the move limit, then the
   score estimates, and then the deep puzzle checks. Options: `:visits` (1
-  by default), and `:cap`, the most that Blue may lead by after the answer.
+  by default), `:cap` (the most that Blue may lead by after the answer),
+  and `:avoid` (stones: a target group with one of them is not a moment).
   """
   def find_moment(board, line, ev, opts \\ []) do
     visits = Keyword.get(opts, :visits, 1)
     cap = Keyword.get(opts, :cap, :infinity)
+    avoid = Keyword.get(opts, :avoid, MapSet.new())
 
     board
     |> goals()
+    |> Enum.reject(fn goal ->
+      Enum.any?(Board.group(board, goal.target).stones, &MapSet.member?(avoid, &1))
+    end)
     |> Enum.find_value(fn goal ->
       with {:ok, {answer, traps}} <- Go.Think.within(@check_ms, fn -> quick(board, goal) end),
            {score, diffs} <- diffs(answer, traps, line, ev, visits),
            true <- cap == :infinity or score <= cap,
+           true <- near_best?(answer, score, line, ev, visits),
            {:ok, {puzzle, report}} <-
              Go.Think.within(@check_ms, fn -> checked(board, goal, answer) end) do
         %{puzzle: puzzle, report: report, diffs: diffs, score: score}
@@ -276,6 +317,12 @@ defmodule Go.Library.Maker do
         _ -> nil
       end
     end)
+  end
+
+  # The answer is the top move of the policy, or nearly as good.
+  defp near_best?(answer, score, line, ev, visits) do
+    {top, _p} = ev |> Evaluator.policy(line) |> Enum.max_by(&elem(&1, 1))
+    top == answer or score >= Evaluator.score(ev, line ++ [{:blue, top}], visits) - @near_best
   end
 
   # One correct move in the move limit, and at least one tempting wrong move.
@@ -373,24 +420,29 @@ defmodule Go.Library.Maker do
     area = Score.count(final)
     margin = area.blue.total - area.red.total
 
-    with :ok <- enough(game.moments),
+    with :ok <- enough(game.moments, game.moments),
          :ok <- close(margin, range, "the area score"),
          estimate = Evaluator.score(ev, before_end(game.moves), visits),
          :ok <- close(estimate, range, "the estimate"),
          moments = confirm(game, ev, visits),
          moments = limit_capture_in_1(moments),
-         :ok <- enough(moments) do
+         :ok <- enough(moments, game.moments) do
       {:ok, build_story(game, moments, area, estimate, books?)}
     end
   end
 
-  defp enough(moments) when length(moments) >= @min_moments, do: :ok
-  defp enough(_moments), do: {:drop, "fewer than #{@min_moments} moments that matter"}
+  defp enough(moments, _found) when length(moments) >= @min_moments, do: :ok
+
+  defp enough(moments, found) do
+    {:drop,
+     "fewer than #{@min_moments} moments that matter (#{length(found)} in the game, " <>
+       "#{length(moments)} after the checks)"}
+  end
 
   defp close(margin, range, what) do
     if margin >= range.first and margin <= range.last,
       do: :ok,
-      else: {:drop, "not a close game by #{what}"}
+      else: {:drop, "not a close game by #{what} (Blue by #{Float.round(margin * 1.0, 1)})"}
   end
 
   # The moves without the passes at the end.

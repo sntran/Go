@@ -64,8 +64,9 @@ defmodule Go.Library.MakerTest do
     assert length(game.moments) >= Maker.min_moments()
     flat = {LineEvaluator, {:flat, game.moves}}
 
-    assert Maker.story(game, flat, margin: -200..200, books: false) ==
-             {:drop, "fewer than #{Maker.min_moments()} moments that matter"}
+    assert {:drop, reason} = Maker.story(game, flat, margin: -200..200, books: false)
+    assert reason =~ "fewer than #{Maker.min_moments()} moments that matter"
+    assert reason =~ "0 after the checks"
   end
 
   @tag timeout: :infinity
@@ -84,13 +85,13 @@ defmodule Go.Library.MakerTest do
     margin = Go.Score.count(Library.final_board(game))
     margin = margin.blue.total - margin.red.total
 
-    assert {:drop, "not a close game by the area score"} =
+    assert {:drop, "not a close game by the area score" <> _} =
              Maker.story(game, line, margin: (margin + 1)..(margin + 10), books: false)
   end
 
   test "a game with too few moments is dropped" do
     game = %{seed: 1, moves: [{:blue, :pass}, {:red, :pass}], moments: [], gave_up: false}
-    assert Maker.story(game, nil) == {:drop, "fewer than 4 moments that matter"}
+    assert {:drop, "fewer than 4 moments that matter" <> _} = Maker.story(game, nil)
     assert {:drop, _} = Maker.story(%{game | gave_up: true}, nil)
   end
 end

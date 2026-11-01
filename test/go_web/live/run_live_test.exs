@@ -178,6 +178,19 @@ defmodule GoWeb.RunLiveTest do
     assert text(html, ".story-where") =~ "Run #{@seed}"
   end
 
+  test "a saved place that the run does not have starts the stage again", %{
+    conn: conn,
+    player: player
+  } do
+    {:ok, _view, _html} = live(conn, ~p"/run/#{@seed}")
+    place = Progress.run_place(player, @seed)
+    Progress.put_run_place(player, %{place | moment: 99})
+
+    {:ok, _view, html} = live(conn, ~p"/run/#{@seed}")
+    assert puzzle_of(html) |> Enum.at(1) == "1"
+    assert Progress.run_place(player, @seed).moment == 1
+  end
+
   test "a shared link gives a new player the same games", %{conn: conn, player: player} do
     {:ok, _view, html} = live(conn, ~p"/run/#{@seed}")
 

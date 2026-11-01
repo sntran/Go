@@ -373,8 +373,18 @@ defmodule GoWeb.PuzzleLive do
 
   defp start_puzzle(socket, n) do
     stage = current_stage(socket)
-    moment = Enum.at(stage.puzzles, n - 1)
 
+    case Enum.at(stage.puzzles, n - 1) do
+      # A new library can change a run: then the stage starts again.
+      nil ->
+        socket |> save_place(%{socket.assigns.place | moment: :start, results: []}) |> resume()
+
+      moment ->
+        show_puzzle(socket, stage, n, moment)
+    end
+  end
+
+  defp show_puzzle(socket, stage, n, moment) do
     socket
     |> save_place(%{socket.assigns.place | moment: n})
     |> assign(
