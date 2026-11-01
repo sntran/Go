@@ -85,7 +85,7 @@ The whole board shows. At a moment, the part outside the fight is dimmed. The wi
 
 ## 5. Changes after the audit of the first library
 
-- **Versions.** Each library file is a version (`priv/library/stories-N.json`), and the old files stay. A run code has the version and the seed (`/run/2-8F3K`). An old link with no version opens version 1. A new run uses the newest version.
+- **Versions.** Each library file is a version (`priv/library/stories-N.etf`), and the old files stay. A run code has the version and the seed (`/run/2-8F3K`). An old link with no version opens version 1. A new run uses the newest version.
 - **Progress after a deploy.** The progress (results, runs, stage results, attempts) is in SQLite (`Go.Repo`): on Workers, the SQLite storage of the Durable Object.
 - **The window** also holds each stone next to a road of the target, next to the answer and next to each trap.
 - **Red answers as the shown answer.** While the player follows the stored answer line, Red prefers the red move of the line.

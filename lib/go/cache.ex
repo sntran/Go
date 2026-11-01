@@ -10,21 +10,22 @@ defmodule Go.Cache do
   docs/load-test.md).
   """
 
-  @doc "The value of `key`; `make` makes it when it is not there yet."
+  @doc """
+  The value of `key`; `make` makes it when it is not there yet. A short
+  process makes the value and puts it: the garbage of the making (the
+  decode of a file) goes away with that process, and is not left in the
+  heap of a page.
+  """
   def fetch(key, make) do
     case :persistent_term.get(key, :none) do
       :none ->
         :global.trans({{__MODULE__, key}, self()}, fn ->
-          case :persistent_term.get(key, :none) do
-            :none ->
-              value = make.()
-              :persistent_term.put(key, value)
-              value
-
-            value ->
-              value
+          if :persistent_term.get(key, :none) == :none do
+            Task.async(fn -> :persistent_term.put(key, make.()) end) |> Task.await(:infinity)
           end
         end)
+
+        :persistent_term.get(key)
 
       value ->
         value

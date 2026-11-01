@@ -2,9 +2,11 @@ defmodule Go.Puzzles do
   @moduledoc """
   The puzzle bank.
 
-  The bank is the data file `priv/puzzles/bank.json`. The mix task
-  `mix go.gen.puzzles` makes it again from the starter set and the
-  generator. The app reads it one time, and keeps it in memory.
+  The bank is the data file `priv/puzzles/bank.etf`, in the Erlang term
+  format (`term_to_binary/1`): a JSON decode made a big temporary peak of
+  memory (see docs/load-test.md). The mix task `mix go.gen.puzzles` makes
+  it again from the starter set and the generator. The app reads it one
+  time, and keeps it in memory.
   """
 
   alias Go.Puzzle
@@ -28,17 +30,23 @@ defmodule Go.Puzzles do
   def world(world), do: Enum.filter(all(), &(&1.world == world))
 
   @doc "The path of the bank file."
-  def path, do: Application.app_dir(:go, "priv/puzzles/bank.json")
+  def path, do: Application.app_dir(:go, "priv/puzzles/bank.etf")
 
-  @doc "Reads a bank file."
+  @doc "Reads the puzzles of a bank file."
   @spec load(Path.t()) :: [Puzzle.t()]
-  def load(path) do
-    path
-    |> File.read!()
-    |> JSON.decode!()
-    |> Map.fetch!("puzzles")
-    |> Enum.map(&Puzzle.from_map/1)
+  def load(path), do: read(path).puzzles
+
+  @doc """
+  Reads a bank file: `%{version, proof, yield, puzzles}`. The file keeps
+  each book as bytes (see `Go.Book`).
+  """
+  def read(path) do
+    data = path |> File.read!() |> :erlang.binary_to_term()
+    %{data | puzzles: Enum.map(data.puzzles, &%{&1 | book: book_from(&1.book)})}
   end
+
+  defp book_from(bytes) when is_binary(bytes), do: Go.Book.decode(bytes)
+  defp book_from(book), do: book
 
   @doc """
   Chooses the next puzzle of a world for a player.
@@ -158,25 +166,10 @@ defmodule Go.Puzzles do
   @doc "Writes a bank to a file, with one puzzle on each line."
   @spec write(map(), Path.t()) :: :ok
   def write(%{puzzles: puzzles, stats: stats} = bank, path) do
-    lines = fn list -> Enum.map_join(list, ",\n", &("    " <> JSON.encode!(&1))) end
-    stats = Enum.map(stats, fn s -> Map.new(s, fn {k, v} -> {Atom.to_string(k), v} end) end)
-    proof = Map.new(bank[:proof] || %{}, fn {k, v} -> {Atom.to_string(k), v} end)
-
-    body = """
-    {
-      "version": 1,
-      "proof": #{JSON.encode!(proof)},
-      "yield": [
-    #{lines.(stats)}
-      ],
-      "puzzles": [
-    #{lines.(Enum.map(puzzles, &Puzzle.to_map/1))}
-      ]
-    }
-    """
-
+    puzzles = Enum.map(puzzles, &%{&1 | book: &1.book && Go.Book.encode(&1.book)})
+    data = %{version: 1, proof: bank[:proof] || %{}, yield: stats, puzzles: puzzles}
     File.mkdir_p!(Path.dirname(path))
-    File.write!(path, body)
+    File.write!(path, :erlang.term_to_binary(data))
   end
 
   @doc "Removes the bank from memory, so that the next call reads the file again."

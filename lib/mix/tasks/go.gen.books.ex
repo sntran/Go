@@ -3,8 +3,8 @@ defmodule Mix.Tasks.Go.Gen.Books do
 
   @moduledoc """
   Makes the book of each puzzle again (see `Go.Book`): the puzzles of the
-  bank (`priv/puzzles/bank.json`) and each moment of each version of the
-  library (`priv/library/stories-N.json`). Only the books change: the
+  bank (`priv/puzzles/bank.etf`) and each moment of each version of the
+  library (`priv/library/stories-N.etf`). Only the books change: the
   puzzles, the stories and the runs stay the same.
 
       $ mix go.gen.books
@@ -17,7 +17,7 @@ defmodule Mix.Tasks.Go.Gen.Books do
 
   use Mix.Task
 
-  alias Go.{Book, Library, Puzzle}
+  alias Go.{Book, Library}
 
   @impl true
   def run(args) do
@@ -28,11 +28,11 @@ defmodule Mix.Tasks.Go.Gen.Books do
     only = opts[:only]
     start = System.monotonic_time(:millisecond)
 
-    if only in [nil, "bank"], do: bank("priv/puzzles/bank.json")
+    if only in [nil, "bank"], do: bank("priv/puzzles/bank.etf")
 
     if only in [nil, "library"] do
       for v <- Library.list_versions("priv/library"),
-          do: library("priv/library/stories-#{v}.json")
+          do: library("priv/library/stories-#{v}.etf")
     end
 
     Mix.shell().info("All books: #{seconds(start)} s.")
@@ -40,30 +40,11 @@ defmodule Mix.Tasks.Go.Gen.Books do
 
   defp bank(path) do
     start = System.monotonic_time(:millisecond)
-    data = path |> File.read!() |> JSON.decode!()
-    puzzles = Enum.map(data["puzzles"], &Puzzle.from_map/1)
+    data = Go.Puzzles.read(path)
+    puzzles = Enum.map(data.puzzles, &%{&1 | book: nil})
     {books, slow} = build_all(puzzles)
-
-    maps =
-      Enum.zip_with(data["puzzles"], books, fn map, book ->
-        Map.put(map, "book", book |> Book.encode() |> Base.encode64())
-      end)
-
-    lines = fn list -> Enum.map_join(list, ",\n", &("    " <> JSON.encode!(&1))) end
-
-    File.write!(path, """
-    {
-      "version": #{data["version"]},
-      "proof": #{JSON.encode!(data["proof"])},
-      "yield": [
-    #{lines.(data["yield"])}
-      ],
-      "puzzles": [
-    #{lines.(maps)}
-      ]
-    }
-    """)
-
+    puzzles = Enum.zip_with(puzzles, books, &%{&1 | book: &2})
+    Go.Puzzles.write(%{puzzles: puzzles, stats: data.yield, proof: data.proof}, path)
     report(path, length(puzzles), books, slow, start)
   end
 

@@ -19,7 +19,16 @@ defmodule Go.Library.Seen do
   """
   def all do
     versions = Library.versions()
-    Go.Cache.fetch({@key, versions}, fn -> fetch(versions, DateTime.utc_now()) end)
+    seen = Go.Cache.fetch({@key, versions}, fn -> fetch(versions, DateTime.utc_now()) end)
+
+    # A time can be missing when the table changed under the cache (the
+    # tests clear it). Then read it again.
+    if Enum.all?(versions, &Map.has_key?(seen, &1)) do
+      seen
+    else
+      reload()
+      Go.Cache.fetch({@key, versions}, fn -> fetch(versions, DateTime.utc_now()) end)
+    end
   end
 
   @doc """

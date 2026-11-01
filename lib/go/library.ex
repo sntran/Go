@@ -4,7 +4,7 @@ defmodule Go.Library do
   played, with its moments: the positions before a key move of Blue that
   are capture or escape puzzles. The mix task `mix go.gen.library` makes
   the library offline (see `Go.Library.Maker`). The server only reads the
-  files `priv/library/stories-N.json`. No neural network runs on the server.
+  files `priv/library/stories-N.etf`. No neural network runs on the server.
 
   ## Versions
 
@@ -16,10 +16,22 @@ defmodule Go.Library do
   version that has started daily runs on that date (see `daily_start/2`),
   so that all players of one date play the same run.
 
-  The file is compact: each move is one byte (`row * 9 + column`, and 81 for
-  a pass), in Base64. Blue plays first, and the colors take turns. The
-  board of a moment comes from the moves. The book of a moment (see
-  `Go.Book`) is bytes too, in the field "tree".
+  ## The file
+
+  A file is in the Erlang term format (`term_to_binary/1`), not JSON: the
+  decode of a big JSON file made a big temporary peak of memory, and on
+  WebAssembly the memory of the VM never shrinks (see docs/load-test.md).
+  The file starts with a small head (the version, the `daily_from` date),
+  that `read_head/1` reads with no read of the stories. The server decodes
+  the stories of a version only when a run needs them (`all/1`). In the
+  file and in memory, the moves of a story are bytes (one byte for each
+  move, `pack/1`), and the book of a moment is bytes (see `Go.Book`): only
+  the stories of a run and the puzzles that a player plays are decoded
+  (`unpack/1`, `puzzle/2`).
+
+  The parts file of `mix go.gen.library` keeps each story as compact JSON
+  (`encode/1`, `decode/1`): each move is one byte (`row * 9 + column`, and
+  81 for a pass), in Base64.
 
   A story (a map):
 
@@ -55,10 +67,31 @@ defmodule Go.Library do
 
   ## Reading
 
-  @doc "All stories of a version (the newest by default), in the order of the file."
+  @doc """
+  All stories of a version (the newest by default), in the order of the
+  file. Their moves are bytes: `unpack/1` gives the list.
+  """
   def all(version \\ newest()) do
-    Go.Cache.fetch({@key, version}, fn -> if version, do: load(path(version)), else: [] end)
+    Go.Cache.fetch({@key, version}, fn -> if version, do: read_packed(path(version)), else: [] end)
   end
+
+  @doc "A story with its moves as a list of `{color, point | :pass}`."
+  def unpack(%{moves: moves} = story) when is_binary(moves) do
+    list =
+      for {b, i} <- Enum.with_index(:binary.bin_to_list(moves)) do
+        {if(rem(i, 2) == 0, do: :blue, else: :red), move(b)}
+      end
+
+    %{story | moves: list}
+  end
+
+  def unpack(story), do: story
+
+  @doc "A story with its moves as bytes (Blue plays first, and the colors take turns)."
+  def pack(%{moves: moves} = story) when is_list(moves),
+    do: %{story | moves: for({_c, m} <- moves, into: <<>>, do: <<byte(m)>>)}
+
+  def pack(story), do: story
 
   @doc "The story with this id in a version (the newest by default), or nil."
   def get(id, version \\ newest()), do: Enum.find(all(version), &(&1.id == id))
@@ -79,7 +112,7 @@ defmodule Go.Library do
   @doc "The versions of the library files in a directory, from the oldest."
   def list_versions(dir) do
     for name <- File.ls!(dir),
-        [_, n] <- [Regex.run(~r/^stories-(\d+)\.json$/, name)],
+        [_, n] <- [Regex.run(~r/^stories-(\d+)\.etf$/, name)],
         do: String.to_integer(n)
   rescue
     File.Error -> []
@@ -94,7 +127,7 @@ defmodule Go.Library do
   def version?(version), do: version in versions()
 
   @doc "The path of the file of a version."
-  def path(version), do: Application.app_dir(:go, Path.join(@dir, "stories-#{version}.json"))
+  def path(version), do: Application.app_dir(:go, Path.join(@dir, "stories-#{version}.etf"))
 
   @doc """
   The version of the daily run of a date: the newest version whose daily
@@ -124,46 +157,42 @@ defmodule Go.Library do
   end
 
   @doc "The `daily_from` date of a version (from its file)."
-  def daily_from(version) do
-    case :persistent_term.get({@key, :daily_from, version}, nil) do
-      nil ->
-        from = read_head(path(version))[:daily_from]
-        :persistent_term.put({@key, :daily_from, version}, from)
-        from
+  def daily_from(version),
+    do: Go.Cache.fetch({@key, :daily_from, version}, fn -> read_head(path(version)).daily_from end)
 
-      from ->
-        from
-    end
+  @magic "GOLIB1"
+
+  @doc """
+  The head of a file: `%{version, daily_from, games, next_seed}`. It reads
+  only the start of the file.
+  """
+  def read_head(path) do
+    {:ok, file} = :file.open(path, [:read, :binary, :raw])
+    {:ok, <<@magic, size::32>>} = :file.read(file, byte_size(@magic) + 4)
+    {:ok, head} = :file.read(file, size)
+    :ok = :file.close(file)
+    :erlang.binary_to_term(head)
   end
 
-  # The head of a file, without the stories.
-  defp read_head(path) do
-    data = path |> File.read!() |> JSON.decode!()
-    %{daily_from: daily_date(data["daily_from"])}
-  end
-
-  defp daily_date(nil), do: ~D[2000-01-01]
-  defp daily_date(text), do: Date.from_iso8601!(text)
-
-  @doc "Reads a library file."
+  @doc "Reads the stories of a library file (their moves as lists)."
   def load(path), do: path |> read() |> Map.fetch!(:stories)
 
   @doc """
   Reads a library file with its counts: `%{version, daily_from, stories,
   games, next_seed}`. `games` is the number of games that the maker played,
-  and `next_seed` the first seed that it did not play.
+  and `next_seed` the first seed that it did not play. The moves of the
+  stories are lists.
   """
   def read(path) do
-    data = path |> File.read!() |> JSON.decode!()
-
-    %{
-      version: data["version"] || 1,
-      daily_from: daily_date(data["daily_from"]),
-      stories: Enum.map(data["stories"], &decode/1),
-      games: data["games"] || 0,
-      next_seed: data["next_seed"] || 1
-    }
+    {head, stories} = split(File.read!(path))
+    Map.put(head, :stories, Enum.map(stories, &unpack/1))
   end
+
+  # The stories as in memory: their moves as bytes.
+  defp read_packed(path), do: path |> File.read!() |> split() |> elem(1)
+
+  defp split(<<@magic, size::32, head::binary-size(size), stories::binary>>),
+    do: {:erlang.binary_to_term(head), :erlang.binary_to_term(stories)}
 
   @doc "Removes the library from memory, so that the next call reads the files again."
   def reload do
@@ -174,7 +203,7 @@ defmodule Go.Library do
 
   @doc "The board after the first `n` moves of a story."
   @spec board_at(map(), non_neg_integer()) :: Board.t()
-  def board_at(story, n), do: play_moves(Board.new(@size), Enum.take(story.moves, n))
+  def board_at(story, n), do: play_moves(Board.new(@size), Enum.take(unpack(story).moves, n))
 
   @doc "Plays moves on a board."
   def play_moves(board, moves) do
@@ -185,7 +214,7 @@ defmodule Go.Library do
   end
 
   @doc "The board at the end of a story."
-  def final_board(story), do: board_at(story, length(story.moves))
+  def final_board(story), do: story |> unpack() |> then(&board_at(&1, length(&1.moves)))
 
   @doc """
   The puzzle of a moment, with its texts. The texts come from the board of
@@ -215,9 +244,8 @@ defmodule Go.Library do
     %{puzzle | title: Generator.title(puzzle), say: say(moment.goal)}
   end
 
-  # The book stays as text (Base64) in memory, until a puzzle needs it:
-  # the books of all versions are too big to keep as maps.
-  defp book(text) when is_binary(text), do: text |> Base.decode64!() |> Go.Book.decode()
+  # The book stays as bytes in memory, until a puzzle needs it.
+  defp book(bytes) when is_binary(bytes), do: Go.Book.decode(bytes)
   defp book(book), do: book
 
   defp say(%{type: :capture}),
@@ -238,9 +266,10 @@ defmodule Go.Library do
   stay unturned: the story keeps the symmetry in `sym`, and each puzzle
   gets it (see `Go.Book`).
   """
-  def rotate(story, 0), do: story
+  def rotate(story, 0), do: unpack(story)
 
   def rotate(story, sym) do
+    story = unpack(story)
     f = &Symmetry.map_point(sym, @size, &1)
 
     story
@@ -303,34 +332,40 @@ defmodule Go.Library do
   ## The file
 
   @doc """
-  Writes a library file, with one story on each line. The options
-  `version`, `daily_from`, `games` and `next_seed` are as in `read/1`.
+  Writes a library file (see "The file" above). The options `version`,
+  `daily_from`, `games` and `next_seed` are as in `read/1`.
   """
   def write(stories, path, opts \\ []) do
-    from = Keyword.get(opts, :daily_from, ~D[2000-01-01])
+    stories = stories |> Enum.map(&book_bytes/1) |> Enum.map(&pack/1)
 
-    body = """
-    {
-      "version": #{Keyword.get(opts, :version, 1)},
-      "daily_from": "#{Date.to_iso8601(from)}",
-      "games": #{Keyword.get(opts, :games, 0)},
-      "next_seed": #{Keyword.get(opts, :next_seed, 1)},
-      "stories": [
-    #{Enum.map_join(stories, ",\n", &("    " <> JSON.encode!(encode(&1))))}
-      ]
-    }
-    """
+    head =
+      :erlang.term_to_binary(%{
+        version: Keyword.get(opts, :version, 1),
+        daily_from: Keyword.get(opts, :daily_from, ~D[2000-01-01]),
+        games: Keyword.get(opts, :games, 0),
+        next_seed: Keyword.get(opts, :next_seed, 1)
+      })
 
     File.mkdir_p!(Path.dirname(path))
-    File.write!(path, body)
+    File.write!(path, [@magic, <<byte_size(head)::32>>, head, :erlang.term_to_binary(stories)])
   end
+
+  # The books stay as bytes in the file and in memory.
+  defp book_bytes(story) do
+    moments = for m <- story.moments, do: %{m | book: bytes(m.book)}
+    %{story | moments: moments} |> Map.delete(:sym)
+  end
+
+  defp bytes(nil), do: nil
+  defp bytes(bytes) when is_binary(bytes), do: bytes
+  defp bytes(book), do: Go.Book.encode(book)
 
   @doc "Changes a story to the compact map of the file."
   def encode(s) do
     %{
       "id" => s.id,
       "seed" => s.seed,
-      "moves" => Base.encode64(for({_c, m} <- s.moves, into: <<>>, do: <<byte(m)>>)),
+      "moves" => Base.encode64(pack(s).moves),
       "moments" =>
         Enum.map(s.moments, fn m ->
           %{
@@ -347,7 +382,7 @@ defmodule Go.Library do
               m.grade.score
             ],
             "diffs" => Enum.map(m.diffs, fn {t, d} -> [byte(t), Float.round(d * 1.0, 1)] end),
-            "tree" => book_text(m.book)
+            "tree" => m.book |> bytes() |> base64()
           }
         end),
       "score" => [s.score.blue, s.score.red],
@@ -386,9 +421,8 @@ defmodule Go.Library do
               score: score
             },
             diffs: Enum.map(x["diffs"], fn [t, d] -> {move(t), d} end),
-            # The old files had only the first taps ("book"). The tree has
-            # all positions (see Go.Book).
-            book: x["tree"]
+            # The tree has all positions (see Go.Book).
+            book: x["tree"] && Base.decode64!(x["tree"])
           }
         end),
       score: %{blue: Enum.at(m["score"], 0), red: Enum.at(m["score"], 1)},
@@ -406,7 +440,6 @@ defmodule Go.Library do
   defp move(@pass), do: :pass
   defp move(b), do: {div(b, @size), rem(b, @size)}
 
-  defp book_text(nil), do: nil
-  defp book_text(text) when is_binary(text), do: text
-  defp book_text(book), do: book |> Go.Book.encode() |> Base.encode64()
+  defp base64(nil), do: nil
+  defp base64(bytes), do: Base.encode64(bytes)
 end

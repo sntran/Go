@@ -218,7 +218,7 @@ mix go.gen.library --count 100   # 100 more stories
 The task makes the stories offline, on a computer or in CI. It never
 runs on the server. It writes a new version of the library: the stories
 of the newest version and the new stories, in a new file
-`priv/library/stories-N.json`. A change of the library (one story more
+`priv/library/stories-N.etf`. A change of the library (one story more
 or less) changes almost all runs, so each change is a new version, and
 the old files stay for the old links. The task also writes the report
 `docs/library-report.md`. The library file keeps the next seed, so the
@@ -367,11 +367,11 @@ from these programs, not the programs or the networks.
 
 Two versions:
 
-- **Version 1** (`stories-1.json`): the first 300 stories. It stays for
+- **Version 1** (`stories-1.etf`): the first 300 stories. It stays for
   the old links and the runs in progress. Only its windows changed (they
   hold the stones that touch the fight); its stories and moments are the
   same, so its runs are the same.
-- **Version 2** (`stories-2.json`), the newest: version 1 without the 14
+- **Version 2** (`stories-2.etf`), the newest: version 1 without the 14
   stories that were the same game as another story, with each difference
   under 8 points checked again with 200 visits (29 moments fell under 5
   points, and 7 stories then had fewer than 4 moments), and 21 new stories
@@ -411,7 +411,7 @@ mix go.gen.puzzles
 
 The task checks the hand-made starter set, makes puzzles from templates,
 checks each puzzle with the solver, makes the book of each puzzle, runs
-the final check, and writes `priv/puzzles/bank.json`. It takes about 20
+the final check, and writes `priv/puzzles/bank.etf`. It takes about 20
 minutes on 4 cores. The same seed (`--seed`, 1 by default) gives the same
 puzzles. Commit the file after you make it again.
 
@@ -554,7 +554,7 @@ The books now (made by `mix go.gen.books`, on my computer with 4 cores):
 
 | | Books | Positions | Taps | Book bytes | File | Time |
 |---|---:|---:|---:|---:|---:|---:|
-| The bank (`bank.json`) | 90 | 149 | 5,607 | 31 KB | 104 KB | 9.5 min |
+| The bank (`bank.etf`) | 90 | 149 | 5,607 | 31 KB | 104 KB | 9.5 min |
 | Library version 1 | 1,745 | 3,136 | 141,868 | 738 KB | 1.27 MB | 27.6 min |
 | Library version 2 | 1,721 | 3,101 | 139,370 | 725 KB | 1.25 MB | 21.9 min |
 

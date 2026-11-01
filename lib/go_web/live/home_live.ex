@@ -32,7 +32,7 @@ defmodule GoWeb.HomeLive do
      assign(socket,
        worlds: worlds,
        run: run_place(player),
-       runs?: Go.Library.all() != [],
+       runs?: Go.Library.newest() != nil,
        # The daily run of the date of the player (from the browser).
        daily: if(connected?(socket), do: Go.Runs.daily_code(daily_date(socket))),
        page_title: "Tower Go"

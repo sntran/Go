@@ -1,11 +1,11 @@
 defmodule Mix.Tasks.Go.Gen.Puzzles do
-  @shortdoc "Makes the puzzle bank in priv/puzzles/bank.json"
+  @shortdoc "Makes the puzzle bank in priv/puzzles/bank.etf"
 
   @moduledoc """
   Makes the puzzle bank again.
 
       $ mix go.gen.puzzles
-      $ mix go.gen.puzzles --seed 2 --output /tmp/bank.json
+      $ mix go.gen.puzzles --seed 2 --output /tmp/bank.etf
 
   It checks the hand-made starter set, makes puzzles from the templates,
   checks each one with the solver, makes the book of each puzzle (each tap
@@ -20,7 +20,7 @@ defmodule Mix.Tasks.Go.Gen.Puzzles do
     * `--proof-ms`: the time limit of each claim of the final check, in
       milliseconds (the default is 20000). See `Go.Puzzles.Proof`.
     * `--output`: the file to write (the default is
-      `priv/puzzles/bank.json`).
+      `priv/puzzles/bank.etf`).
   """
 
   use Mix.Task
@@ -32,7 +32,7 @@ defmodule Mix.Tasks.Go.Gen.Puzzles do
 
     Mix.Task.run("compile")
 
-    output = Keyword.get(opts, :output, "priv/puzzles/bank.json")
+    output = Keyword.get(opts, :output, "priv/puzzles/bank.etf")
 
     build_opts = [
       seed: Keyword.get(opts, :seed, 1),

@@ -12,7 +12,7 @@ defmodule Go.LibraryTest do
   alias Go.Library.Maker
   alias Go.Puzzles.{Check, Symmetry}
 
-  @stories Library.all()
+  @stories Enum.map(Library.all(), &Library.unpack/1)
 
   test "the library has stories" do
     refute Enum.empty?(@stories)

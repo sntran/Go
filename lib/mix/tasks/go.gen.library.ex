@@ -10,7 +10,7 @@ defmodule Mix.Tasks.Go.Gen.Library do
       $ mix go.gen.library --count 100   # 100 more stories
 
   The task makes a new version of the library: the stories of the newest
-  version and the new stories, in a new file `priv/library/stories-N.json`.
+  version and the new stories, in a new file `priv/library/stories-N.etf`.
   The old files stay, so that old runs and old links stay the same (see
   `Go.Library`). The new version gets the `daily_from` date of 2 days
   after the task: the daily runs use it from then, or later when it is
@@ -38,7 +38,7 @@ defmodule Mix.Tasks.Go.Gen.Library do
     * `--base`: the library file to add to (the default is the newest
       version in `priv/library`).
     * `--output`, `--version`: the new library file and its version (the
-      defaults are the next version, `priv/library/stories-N.json`).
+      defaults are the next version, `priv/library/stories-N.etf`).
     * `--report`: the report (the default is `docs/library-report.md`).
     * `--write-only`: do not play; only write the library and the report
       from the parts file.
@@ -77,12 +77,12 @@ defmodule Mix.Tasks.Go.Gen.Library do
     base =
       cond do
         opts[:base] -> Library.read(opts[:base])
-        newest -> Library.read("priv/library/stories-#{newest}.json")
+        newest -> Library.read("priv/library/stories-#{newest}.etf")
         true -> %{version: 0, stories: [], games: 0, next_seed: 1}
       end
 
     version = Keyword.get(opts, :version, base.version + 1)
-    output = Keyword.get(opts, :output, "priv/library/stories-#{version}.json")
+    output = Keyword.get(opts, :output, "priv/library/stories-#{version}.etf")
 
     unless opts[:write_only], do: play(opts, parts, base)
 
