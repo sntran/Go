@@ -316,21 +316,42 @@ from these programs, not the programs or the networks.
 
 ### The library now
 
-- 300 stories, from 3082 games. 1745 moments: capture in 1: 564,
-  capture in 2: 247, capture in 3: 403, escape in 1: 443, escape in 2: 67,
-  escape in 3: 21.
+Two versions:
+
+- **Version 1** (`stories-1.json`): the first 300 stories. It stays for
+  the old links and the runs in progress. Only its windows changed (they
+  hold the stones that touch the fight); its stories and moments are the
+  same, so its runs are the same.
+- **Version 2** (`stories-2.json`), the newest: version 1 without the 14
+  stories that were the same game as another story, with each difference
+  under 8 points checked again with 200 visits (29 moments fell under 5
+  points, and 7 stories then had fewer than 4 moments), and 21 new stories
+  with the new openings. The daily runs use it from November 3, 2026.
+
+Version 2:
+
+- 300 stories, from 3225 games. 1721 moments: capture in 1: 552,
+  capture in 2: 245, capture in 3: 399, escape in 1: 434, escape in 2: 68,
+  escape in 3: 23.
 - 4 to 13 moments in a story. Games of 46 to 112 moves. Blue wins each
   game by 1 to 10 points. The grades of the stories go from 22 to 48, and
-  the rank scores from 15 to 150.
-- The windows: 611 moments of 5x5, 602 of 7x7, and 532 of 9x9 (the whole
+  the rank scores from 20 to 150. No two stories are the same game.
+- The openings: 11 different first two moves (5 in version 1), and 120
+  different first 10 moves. Each of the new stories has its own first 10
+  moves.
+- The windows: 550 moments of 5x5, 589 of 7x7, and 582 of 9x9 (the whole
   board, nothing dimmed).
 - The report for each story: [`docs/library-report.md`](docs/library-report.md).
 
-The size: the library file `priv/library/stories.json` is 475,225 bytes
-(about 1.6 KB for each story, with the books). `app.com` of a release
-with it is 36,186,482 bytes (34.5 MiB, 19.7 MB with gzip). This is under
-the limit of 64 MiB of the Worker, so the library stays in the Worker
-bundle. No R2 is needed.
+The second check with 200 visits took about 3.5 hours on my computer (771
+positions), and the 21 new stories about 2 hours, with the second check
+too.
+
+The size: each library file is about 470 KB (about 1.6 KB for each story,
+with the books). `app.com` of a release with both versions is 37,121,157
+bytes (35.4 MiB, 20.6 MB with gzip). This is under the limit of 64 MiB of
+the Worker, so the library stays in the Worker bundle. No R2 is needed.
+Each new version adds about 0.5 MB.
 
 ## Make the puzzle bank
 
