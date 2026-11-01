@@ -244,7 +244,12 @@ defmodule Go.Play do
   defp searched(%{puzzle: puzzle}, what, taps) do
     if Book.full?(puzzle) do
       Logger.warning("The book of #{puzzle.id} has no #{what} after the taps #{inspect(taps)}")
-      :telemetry.execute([:go, :play, :search], %{count: 1}, %{puzzle: puzzle.id, what: what, taps: taps})
+
+      :telemetry.execute([:go, :play, :search], %{count: 1}, %{
+        puzzle: puzzle.id,
+        what: what,
+        taps: taps
+      })
     end
   end
 
@@ -278,8 +283,12 @@ defmodule Go.Play do
         hand = if t.start?, do: Map.get(puzzle.wrong, t.point)
         reply = if hand, do: Map.get(hand, :reply)
         line = punish_line(goal, play.board, play.left, reply, deep?)
+
         better =
-          Keyword.get_lazy(opts, :better, fn -> better_move(puzzle, t.before, t.left_before, t.start?, deep?) end)
+          Keyword.get_lazy(opts, :better, fn ->
+            better_move(puzzle, t.before, t.left_before, t.start?, deep?)
+          end)
+
         {:wrong, Enum.map(line, fn {color, move, _} -> {color, move} end), better}
     end
   end

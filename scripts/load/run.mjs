@@ -52,9 +52,11 @@ class Player {
     const res = await fetch(`${url}/run/${this.run.code}`, { redirect: 'manual' });
     const html = await res.text();
     const cookie = (res.headers.get('set-cookie') || '').split(';')[0];
-    const csrf = /<meta name="csrf-token" content="([^"]+)"/.exec(html)[1];
-    const main = /<div id="(phx-[^"]+)" data-phx-main[^>]*data-phx-session="([^"]+)"[^>]*data-phx-static="([^"]+)"/.exec(html);
-    if (!main) throw new Error('no live view');
+    const csrf = /<meta[^>]*name="csrf-token" content="([^"]+)"/.exec(html)[1];
+    const tag = (/<div[^>]*data-phx-main[^>]*>/.exec(html) || [])[0];
+    if (!tag) throw new Error('no live view');
+    const attr = (name) => new RegExp(`${name}="([^"]+)"`).exec(tag)[1];
+    const main = [null, attr('id'), attr('data-phx-session'), attr('data-phx-static')];
     this.topic = `lv:${main[1]}`;
     const wsUrl = `${url.replace('http', 'ws')}/live/websocket?_csrf_token=${encodeURIComponent(csrf)}&vsn=2.0.0`;
     this.ws = new WebSocket(wsUrl, { headers: { cookie } });

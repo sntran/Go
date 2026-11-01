@@ -107,7 +107,9 @@ defmodule Mix.Tasks.Go.Gen.Books do
   defp report(path, count, books, slow, start) do
     bytes = books |> Enum.map(&byte_size(Book.encode(&1))) |> Enum.sum()
     positions = books |> Enum.map(&map_size(&1.nodes)) |> Enum.sum()
-    taps = books |> Enum.flat_map(&Map.values(&1.nodes)) |> Enum.map(&map_size(&1.taps)) |> Enum.sum()
+
+    taps =
+      books |> Enum.flat_map(&Map.values(&1.nodes)) |> Enum.map(&map_size(&1.taps)) |> Enum.sum()
 
     Mix.shell().info(
       "#{path}: #{count} books, #{positions} positions, #{taps} taps, #{bytes} bytes " <>

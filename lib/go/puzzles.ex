@@ -17,17 +17,7 @@ defmodule Go.Puzzles do
 
   @doc "All puzzles of the bank, in the order of the game."
   @spec all() :: [Puzzle.t()]
-  def all do
-    case :persistent_term.get(@key, nil) do
-      nil ->
-        puzzles = load(path())
-        :persistent_term.put(@key, puzzles)
-        puzzles
-
-      puzzles ->
-        puzzles
-    end
-  end
+  def all, do: Go.Cache.fetch(@key, fn -> load(path()) end)
 
   @doc "The puzzle with this id, or nil."
   @spec get(String.t()) :: Puzzle.t() | nil

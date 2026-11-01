@@ -19,16 +19,7 @@ defmodule Go.Library.Seen do
   """
   def all do
     versions = Library.versions()
-
-    case :persistent_term.get(@key, nil) do
-      %{} = seen when map_size(seen) == length(versions) ->
-        seen
-
-      _ ->
-        seen = fetch(versions, DateTime.utc_now())
-        :persistent_term.put(@key, seen)
-        seen
-    end
+    Go.Cache.fetch({@key, versions}, fn -> fetch(versions, DateTime.utc_now()) end)
   end
 
   @doc """
@@ -57,5 +48,8 @@ defmodule Go.Library.Seen do
   end
 
   @doc "Removes the times from memory, so that the next call reads the database."
-  def reload, do: :persistent_term.erase(@key)
+  def reload do
+    for {{@key, _} = key, _} <- :persistent_term.get(), do: :persistent_term.erase(key)
+    :ok
+  end
 end

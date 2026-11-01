@@ -167,19 +167,59 @@ defmodule Go.Runs do
       other moments.
   """
   def run(code, level, stories \\ nil) do
-    {version, seed} = split(code)
-    stories = stories || Library.all(version)
-    tiers = tiers(stories)
-    rng = rng(seed)
-
-    {stages, _rng} =
-      Enum.map_reduce(1..@stages, rng, fn k, rng ->
-        {story, rng} = choose(Enum.at(tiers, k - 1), rng)
-        {sym, rng} = :rand.uniform_s(8, rng)
-        {stage(k, Library.rotate(story, sym - 1), sym - 1, level), rng}
-      end)
+    stages =
+      for {k, story, sym} <- choices(code, stories) do
+        stage(k, Library.rotate(story, sym), sym, level)
+      end
 
     %{seed: code, level: level, stages: stages}
+  end
+
+  @doc """
+  One stage of a run: the same as `Enum.at(run(code, level).stages, k - 1)`,
+  but it turns only the story of this stage. A run page keeps only its
+  stage, so that each player needs little memory.
+  """
+  def stage(code, level, k) do
+    {^k, story, sym} = Enum.at(choices(code, nil), k - 1)
+    stage(k, Library.rotate(story, sym), sym, level)
+  end
+
+  # The story and the symmetry of each stage.
+  defp choices(code, stories) do
+    {version, seed} = split(code)
+    tiers = if stories, do: tiers(stories), else: version_tiers(version)
+
+    {choices, _rng} =
+      Enum.map_reduce(1..@stages, rng(seed), fn k, rng ->
+        {story, rng} = choose(Enum.at(tiers, k - 1), rng)
+        {sym, rng} = :rand.uniform_s(8, rng)
+        {{k, story, sym - 1}, rng}
+      end)
+
+    choices
+  end
+
+  # The tiers of a version stay in memory: each run uses them. They keep
+  # only the place of each story in the library, so they are small.
+  defp version_tiers(version) do
+    stories = Library.all(version)
+
+    places =
+      Go.Cache.fetch({__MODULE__, :tiers, version, length(stories)}, fn ->
+        place = stories |> Enum.with_index() |> Map.new(fn {s, i} -> {s.id, i} end)
+        for tier <- tiers(stories), do: Enum.map(tier, &Map.fetch!(place, &1.id))
+      end)
+
+    all = List.to_tuple(stories)
+    for tier <- places, do: Enum.map(tier, &elem(all, &1))
+  end
+
+  @doc false
+  # The tiers of the newest version, made at the start of the app.
+  def warm do
+    if v = Library.newest(), do: version_tiers(v)
+    :ok
   end
 
   # The random generator of a seed. :erlang.phash2/2 and the exsss

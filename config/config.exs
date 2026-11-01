@@ -30,7 +30,10 @@ config :go, GoWeb.Endpoint,
     layout: false
   ],
   pubsub_server: Go.PubSub,
-  live_view: [signing_salt: "4SpsoSnH"]
+  # A page that waits 1 s (a player thinks between taps) hibernates: its
+  # process collects its garbage. One Durable Object serves all players,
+  # and the memory of its VM never shrinks (see docs/load-test.md).
+  live_view: [signing_salt: "4SpsoSnH", hibernate_after: 1_000]
 
 # Configure LiveView
 config :phoenix_live_view,

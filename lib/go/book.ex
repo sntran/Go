@@ -43,7 +43,10 @@ defmodule Go.Book do
   @tap_ms 60_000
 
   @type entry :: map()
-  @type t :: %{nodes: %{[Board.point()] => %{taps: %{Board.point() => entry}, hint: list}}, answer: list}
+  @type t :: %{
+          nodes: %{[Board.point()] => %{taps: %{Board.point() => entry}, hint: list}},
+          answer: list
+        }
 
   ## Build
 

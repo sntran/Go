@@ -35,6 +35,7 @@ defmodule GoWeb.PuzzleLive do
         timer: nil,
         recorded: false,
         run: nil,
+        stage: nil,
         place: nil,
         phase: nil,
         anim: nil,
@@ -316,7 +317,8 @@ defmodule GoWeb.PuzzleLive do
   defp mount_run(socket, param) do
     cond do
       Library.newest() == nil ->
-        {:ok, socket |> put_flash(:error, "There are no stories yet.") |> push_navigate(to: ~p"/")}
+        {:ok,
+         socket |> put_flash(:error, "There are no stories yet.") |> push_navigate(to: ~p"/")}
 
       param == "new" ->
         {:ok, push_navigate(socket, to: ~p"/run/#{Runs.new_code()}")}
@@ -327,16 +329,24 @@ defmodule GoWeb.PuzzleLive do
 
       param == "daily" ->
         date = Runs.today(get_connect_params(socket)["date"])
-        {:ok, push_navigate(socket, to: ~p"/run/#{Runs.daily_code(date)}?day=#{Date.to_iso8601(date)}")}
+
+        {:ok,
+         push_navigate(socket, to: ~p"/run/#{Runs.daily_code(date)}?day=#{Date.to_iso8601(date)}")}
 
       (code = Runs.parse(param)) && code != param ->
         {:ok, push_navigate(socket, to: ~p"/run/#{code}")}
+
+      # The first page (before the WebSocket) does not make the run: the
+      # run is made one time, when the page connects.
+      Runs.parse(param) && not connected?(socket) ->
+        {:ok, assign(socket, phase: :loading, page_title: "Run #{param}")}
 
       seed = Runs.parse(param) ->
         {:ok, assign(socket, seed: seed)}
 
       true ->
-        {:ok, socket |> put_flash(:error, "This is not the code of a run.") |> push_navigate(to: ~p"/")}
+        {:ok,
+         socket |> put_flash(:error, "This is not the code of a run.") |> push_navigate(to: ~p"/")}
     end
   end
 
@@ -361,7 +371,8 @@ defmodule GoWeb.PuzzleLive do
     Progress.put_run_place(player, place)
 
     socket
-    |> assign(run: Runs.run(seed, place.level), place: place, page_title: "Run #{seed}")
+    |> assign(run: %{seed: seed, level: place.level}, place: place, page_title: "Run #{seed}")
+    |> load_stage()
     |> resume()
   end
 
@@ -395,7 +406,13 @@ defmodule GoWeb.PuzzleLive do
     end
   end
 
-  defp current_stage(%{assigns: %{run: run, place: place}}), do: Enum.at(run.stages, place.stage - 1)
+  # The page keeps only the stage of the place (see Go.Runs.stage/3).
+  defp current_stage(%{assigns: %{stage: stage}}), do: stage
+
+  defp load_stage(%{assigns: %{run: run, place: %{stage: k}}} = socket) when is_integer(k),
+    do: assign(socket, stage: Runs.stage(run.seed, run.level, k))
+
+  defp load_stage(socket), do: assign(socket, stage: nil)
 
   defp save_place(socket, place) do
     Progress.put_run_place(socket.assigns.player, place)
@@ -458,7 +475,9 @@ defmodule GoWeb.PuzzleLive do
   end
 
   # The result of each puzzle of the stage, the first time that it ends.
-  defp record_run(%{assigns: %{mode: :run, phase: :moment, place: place, moment: m, play: play}} = socket) do
+  defp record_run(
+         %{assigns: %{mode: :run, phase: :moment, place: place, moment: m, play: play}} = socket
+       ) do
     if Enum.any?(place.results, &(&1.index == m.index)) do
       socket
     else
@@ -498,7 +517,7 @@ defmodule GoWeb.PuzzleLive do
         do: %{place | stage: :done, moment: :end},
         else: %{place | stage: place.stage + 1, moment: :start, results: []}
 
-    socket |> save_place(place) |> resume()
+    socket |> save_place(place) |> load_stage() |> resume()
   end
 
   # Plays the moves of the main line from `from` to `to` on the board.
@@ -562,8 +581,7 @@ defmodule GoWeb.PuzzleLive do
     ~H"""
     <Layouts.app flash={@flash}>
       <main class="done">
-        <h1 id="title">The daily run</h1>
-        <p class="say">Opening the run of your date…</p>
+        <h1 id="title">Opening the run…</h1>
       </main>
     </Layouts.app>
     """
@@ -668,7 +686,8 @@ defmodule GoWeb.PuzzleLive do
     <Layouts.app flash={@flash}>
       <main class="done">
         <p class="kicker" id="kicker">
-          <.link navigate={~p"/"} class="back-link">Home</.link> · Run <span id="seed">{@place.seed}</span>
+          <.link navigate={~p"/"} class="back-link">Home</.link>
+          · Run <span id="seed">{@place.seed}</span>
         </p>
         <h1 id="title">You finished the run!</h1>
         <p class="say">
@@ -724,7 +743,8 @@ defmodule GoWeb.PuzzleLive do
         atari: atari?(board),
         busy: Play.busy?(play),
         world_text: Worlds.get(play.puzzle.world),
-        run_total: if(assigns.mode == :run, do: length(current_stage(%{assigns: assigns}).puzzles))
+        run_total:
+          if(assigns.mode == :run, do: length(current_stage(%{assigns: assigns}).puzzles))
       )
 
     ~H"""

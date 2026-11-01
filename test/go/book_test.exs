@@ -42,7 +42,10 @@ defmodule Go.BookTest do
     for {key, node} <- Book.positions(puzzle.book) do
       at = play_taps(puzzle, Enum.map(key, turn))
       assert at.status == :playing, "#{puzzle.id} at #{inspect(key)}: #{at.status}"
-      assert Board.legal_moves(at.board, :blue) |> Enum.map(&Symmetry.map_point(Symmetry.inverse(puzzle.sym), puzzle.size, &1)) |> Enum.sort() == node.taps |> Map.keys() |> Enum.sort()
+
+      assert Board.legal_moves(at.board, :blue)
+             |> Enum.map(&Symmetry.map_point(Symmetry.inverse(puzzle.sym), puzzle.size, &1))
+             |> Enum.sort() == node.taps |> Map.keys() |> Enum.sort()
 
       hint = Play.hint(at)
       assert Play.hint_spots(hint) != []

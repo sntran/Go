@@ -85,7 +85,9 @@ defmodule Go.LibraryTest do
 
         puzzle = Library.puzzle(@s, m)
         board = Puzzle.board(puzzle)
-        assert Board.get(board, m.goal.target) == if(m.goal.type == :capture, do: :red, else: :blue)
+
+        assert Board.get(board, m.goal.target) ==
+                 if(m.goal.type == :capture, do: :red, else: :blue)
 
         {r, c, size} = m.window
         assert size in [5, 7, 9] and r >= 0 and c >= 0 and r + size <= 9 and c + size <= 9
@@ -130,6 +132,7 @@ defmodule Go.LibraryTest do
       puzzle = Library.puzzle(rotated, rm)
 
       assert rm.answer == f.(m.answer)
+
       assert Library.board_at(rotated, rm.index).stones ==
                Map.new(Library.board_at(s, m.index).stones, fn {p, c} -> {f.(p), c} end)
 

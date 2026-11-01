@@ -8,8 +8,9 @@ defmodule Mix.Tasks.Go.Gen.Puzzles do
       $ mix go.gen.puzzles --seed 2 --output /tmp/bank.json
 
   It checks the hand-made starter set, makes puzzles from the templates,
-  checks each one with the solver, makes the book of each puzzle (the
-  results of the first moves), runs the final check (see
+  checks each one with the solver, makes the book of each puzzle (each tap
+  in each position that a player can reach, see `Go.Book`), runs the
+  final check (see
   `Go.Puzzles.Proof`), and writes the bank. Then it shows the
   yield: the number of good, different puzzles from each template.
 

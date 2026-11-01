@@ -7,6 +7,13 @@ defmodule Go.Application do
 
   @impl true
   def start(_type, _args) do
+    # A process cleans its old heap after 10 minor collections, not after
+    # 65535 (the default). A LiveView of a run renders often (the moves of
+    # the game), and its old heap filled with garbage. On WebAssembly the
+    # memory of the VM never shrinks, so this garbage made the peak (see
+    # docs/load-test.md).
+    :erlang.system_flag(:fullsweep_after, 10)
+
     children = [
       GoWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:go, :dns_cluster_query) || :ignore},
@@ -19,7 +26,8 @@ defmodule Go.Application do
       # no action of a player waits for it.
       # It also stores the time when the server first sees each version of
       # the library (see Go.Library.Seen).
-      {Task, fn -> {Go.Puzzles.all(), Go.Library.all(), Go.Library.Seen.all()} end},
+      {Task,
+       fn -> {Go.Puzzles.all(), Go.Library.all(), Go.Library.Seen.all(), Go.Runs.warm()} end},
       # Start to serve requests, typically the last entry
       GoWeb.Endpoint
     ]

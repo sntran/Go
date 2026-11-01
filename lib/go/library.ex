@@ -19,7 +19,7 @@ defmodule Go.Library do
   The file is compact: each move is one byte (`row * 9 + column`, and 81 for
   a pass), in Base64. Blue plays first, and the colors take turns. The
   board of a moment comes from the moves. The book of a moment (see
-  `Go.Puzzle`) is bytes too: a move of Red has 128 added.
+  `Go.Book`) is bytes too, in the field "tree".
 
   A story (a map):
 
@@ -57,15 +57,7 @@ defmodule Go.Library do
 
   @doc "All stories of a version (the newest by default), in the order of the file."
   def all(version \\ newest()) do
-    case :persistent_term.get({@key, version}, nil) do
-      nil ->
-        stories = if version, do: load(path(version)), else: []
-        :persistent_term.put({@key, version}, stories)
-        stories
-
-      stories ->
-        stories
-    end
+    Go.Cache.fetch({@key, version}, fn -> if version, do: load(path(version)), else: [] end)
   end
 
   @doc "The story with this id in a version (the newest by default), or nil."

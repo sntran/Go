@@ -78,9 +78,10 @@ defmodule Go.Transfer do
     since = now |> DateTime.add(-1, :hour) |> time()
 
     Repo.one(
-      from t in "transfer_tries",
+      from(t in "transfer_tries",
         where: t.browser == ^browser and t.at > ^since,
         select: count()
+      )
     )
   end
 
@@ -98,7 +99,7 @@ defmodule Go.Transfer do
       )
 
     if count == 1 do
-      {:ok, Repo.one(from c in "transfer_codes", where: c.code == ^code, select: c.player)}
+      {:ok, Repo.one(from(c in "transfer_codes", where: c.code == ^code, select: c.player))}
     else
       :error
     end

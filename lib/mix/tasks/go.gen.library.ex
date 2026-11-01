@@ -97,6 +97,7 @@ defmodule Mix.Tasks.Go.Gen.Library do
 
     games = base.games + length(lines)
     next_seed = max(base.next_seed, Enum.max(seeds, fn -> 0 end) + 1)
+
     Library.write(stories, output,
       version: version,
       daily_from: Date.add(Date.utc_today(), 2),

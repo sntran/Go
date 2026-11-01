@@ -47,7 +47,9 @@ defmodule GoWeb.MoveLive do
           </div>
           <div class="fb" id="use-code">
             <p class="t">2. On the other device</p>
-            <p>Type the code here. The progress of the code then replaces the progress of this browser.</p>
+            <p>
+              Type the code here. The progress of the code then replaces the progress of this browser.
+            </p>
             <form action={~p"/move"} method="post" id="code-form">
               <input type="hidden" name="_csrf_token" value={Phoenix.Controller.get_csrf_token()} />
               <input

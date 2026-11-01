@@ -42,9 +42,13 @@ end
 if config_env() == :prod do
   # The progress of the players. beam.com gives DATABASE_PATH on Cloudflare
   # Workers (the SQLite storage of the Durable Object).
+  # Many players write at the same time: a statement waits up to 2 s for a
+  # connection, and is not dropped after 100 ms (see docs/load-test.md).
   config :go, Go.Repo,
     database: System.get_env("DATABASE_PATH") || "go.db",
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1")
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "4"),
+    queue_target: 2_000,
+    queue_interval: 10_000
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
@@ -69,7 +73,10 @@ if config_env() == :prod do
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
       # See the documentation on https://bandit.hexdocs.pm/Bandit.html#t:options/0
       # for details about using IPv6 vs IPv4 and loopback vs public addresses.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0}
+      ip: {0, 0, 0, 0, 0, 0, 0, 0},
+      # On Cloudflare Workers, the host of beam.com has one listener, so one
+      # acceptor is enough. Each acceptor is a process that takes memory.
+      thousand_island_options: [num_acceptors: 1]
     ],
     secret_key_base: secret_key_base
 

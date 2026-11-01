@@ -83,9 +83,16 @@ The tests include:
   in the file), a sample of the moments runs the full puzzle checks again,
   a rotated moment keeps its answer (rotated) and passes the checks, and a
   test story whose moments do not change the score is dropped,
+- the books: each tap and the hint in each position of each book (the
+  bank, and each moment of each library version, unturned and turned)
+  run with no search (`test/go/book_test.exs`),
 - the stored answer lines: for each moment of each version of the
   library, in all 8 rotations, the answer line solves the puzzle with real
   taps (Red answers as the shown line),
+- the progress: the session cookie lives one year; a transfer code moves
+  the progress, and a used, an old or a wrong code does not; at most 5
+  wrong codes in one hour; a run page keeps little memory, and pages
+  hibernate,
 - the windows: in each version, no stone next to a road of the target,
   next to the answer or next to a trap is dimmed,
 - the maker: a difference under 8 points is checked again with 200
@@ -166,7 +173,43 @@ The plan is in [`docs/plans/story-runs.md`](docs/plans/story-runs.md).
   of each puzzle) stay in `Go.Progress`, in SQLite, for a later
   leaderboard. They stay after a new deploy.
 
-## The library of strong stories
+## The progress of a player
+
+- There are no accounts. The progress (stars, puzzles, runs) belongs to
+  the player id in the session cookie. The cookie lives one year, and each
+  visit sends it again, so the year starts again.
+- **Move my progress to another device** (`/move`, a link at the bottom
+  of the home page): the page shows a code of 10 characters from the
+  alphabet of the run codes (32 ** 10 = 2 ** 50 codes, so nobody can guess
+  one). It works one time, for 24 hours. On the other device, the player
+  types it, and that browser gets the same player id. A browser can type
+  at most 5 wrong codes in one hour. The codes and the tries are in SQLite
+  (`Go.Transfer`).
+
+## How many players one Durable Object serves
+
+The details are in [`docs/load-test.md`](docs/load-test.md). N players
+start a run at the same time, and tap every 3 to 10 seconds, on `wrangler
+dev`:
+
+| Players | Tap → blue stone, p95 | Red's reply less its 700 ms pause, p95 | VM memory (peak) |
+|---:|---:|---:|---:|
+| 10 | 34 ms | 40 ms | 260 MB |
+| 50 | 39 ms | 47 ms | 632 MB |
+| 100 | 114 ms | 114 ms | 1,042 MB |
+| 150 | 173 ms | 163 ms | 1,443 MB |
+| 200 | 1,335 ms | 1,457 ms | 1,827 MB |
+
+- By the time of a tap, one Durable Object serves 150 players (the 95th
+  percentile is under 1 s); at 200, its one thread is nearly full.
+- By the memory, it serves far fewer: an isolate on Cloudflare has 128
+  MB, and `wrangler dev` does not apply this limit. 3 players who start
+  together already reach 125 MB. The main cause is the animation at the
+  start of a stage (the server renders the 9x9 board for each move), and
+  the memory of the VM never shrinks. `docs/load-test.md` lists what I
+  changed, and the options to fix it.
+
+
 
 ```sh
 mix go.gen.library --count 100   # 100 more stories
@@ -218,11 +261,10 @@ How the maker works (`Go.Library.Maker`):
    moments. The rank score gives points when a later moment uses stones
    of an earlier moment, for each different idea, and when the moments
    become harder.
-7. **The book** of each moment has the results of the first moves in the
-   window, and the answer line. During play, while the player follows the
-   answer line, Red plays the red moves of the line (when they are as good
-   as its best move). So a player who repeats the shown answer wins, also
-   on a turned board.
+7. **The book** of each moment has each tap in each position that a player
+   can reach (see [Speed](#speed)). While the player follows the answer
+   line, Red plays the red moves of the line. So a player who repeats the
+   shown answer wins, also on a turned board.
 
 ### KataGo
 
@@ -483,19 +525,55 @@ tests compare it with the reference solver, which tries all legal moves.
 
 ### Speed
 
-A tap must be fast: a child does not wait. The bank has a book for each
-puzzle: the result of each legal first move, and the answer line. So a
-first tap, a hint at the start and "Show the answer" need no search. A
-later tap shows the blue stone and "Red is thinking…" at once, and the
-search runs in a task with a time limit of 700 ms (`:think_ms`). When the
-time is over, a fast search in the move limit decides.
+A tap must be fast: a child does not wait, and one Durable Object serves
+all players. So during play the server never searches: a tap is only a
+lookup in the book of the puzzle (`Go.Book`).
+
+- The book has every position that a player can reach: the correct line,
+  and each legal tap at each turn. A wrong tap ends the puzzle after Red's
+  punishment, so the tree is small: it grows only along the good taps.
+- For each tap: the result (solved, good or wrong); for a good tap, Red's
+  reply (the same reply as the shown answer line) and if the goal is
+  reached after it; for a wrong tap, Red's punishment and the better move.
+  The three-part explanation comes from these data and the board (it
+  needs no search). Each position also has its good taps, for the hint.
+- The book is for the unturned board. A turned puzzle of a run keeps its
+  symmetry: a lookup turns the tap back, and turns the result again.
+- A library file keeps each book as Base64 text in memory, and a puzzle
+  decodes its book when it starts. So the books of all versions do not
+  fill the memory of the Durable Object.
+- If a position is ever not in the book, the old search runs, with its
+  time limit of 700 ms (`:think_ms`), and the server logs the position
+  (and sends the telemetry event `[:go, :play, :search]`), so that we can
+  find the gap. `test/go/book_test.exs` plays each tap in each position of
+  each book (the bank, and each moment of each library version, unturned
+  and turned), and the hint in each position, and checks that no search
+  runs.
+
+The books now (made by `mix go.gen.books`, on my computer with 4 cores):
+
+| | Books | Positions | Taps | Book bytes | File | Time |
+|---|---:|---:|---:|---:|---:|---:|
+| The bank (`bank.json`) | 90 | 149 | 5,607 | 31 KB | 104 KB | 9.5 min |
+| Library version 1 | 1,745 | 3,136 | 141,868 | 738 KB | 1.27 MB | 27.6 min |
+| Library version 2 | 1,721 | 3,101 | 139,370 | 725 KB | 1.25 MB | 21.9 min |
+
+No tap needed more than the time limit of the build (60 s for one tap).
+The files hold the books in Base64, so they are about 1.7 times the book
+bytes.
+
+- `mix go.gen.puzzles` (the whole bank, with the books): 16 min 44 s. It
+  gives the same puzzles and the same books as the bank.
+- `mix go.gen.library`: the books add about 1 s for each moment (on 4
+  cores), so about 30 minutes for 300 stories, after the KataGo part
+  (about 4 hours for the first 300 stories, see above).
+- `app.com` with the bank and both library versions: 37,640,528 bytes
+  (35.9 MiB, 21.0 MB with gzip). This is under the limit of 64 MiB.
 
 `test/go/speed_test.exs` checks that each server action takes less than
-1 s, for each puzzle of the bank and for the puzzles of a run. The book
-of a run puzzle has the first moves in the window of the fight. A first
-tap outside the window searches with the time limit.
+1 s, for each puzzle of the bank and for the puzzles of a run.
 
-I measured the taps on the WebAssembly runtime of BEAM.com 0.1.0-rc.6:
+Before the full books, I measured the taps on the WebAssembly runtime of BEAM.com 0.1.0-rc.6:
 `app.com` of a release (`RELEASE_ERTS=false mix release`), in `workerd`
 on my computer (`wrangler dev`), with a browser at phone width. 231 taps
 in 136 tap sequences (the answer lines, a wrong first move and a wrong

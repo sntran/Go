@@ -314,9 +314,13 @@ defmodule Go.Library.Maker do
 
     candidates =
       policy
-      |> Enum.filter(fn {m, p} -> m != :pass and p >= @opening_min and legal?(board, color, m) end)
+      |> Enum.filter(fn {m, p} ->
+        m != :pass and p >= @opening_min and legal?(board, color, m)
+      end)
       |> Enum.sort_by(fn {_m, p} -> -p end)
-      |> Enum.uniq_by(fn {m, _p} -> Enum.min([m | Enum.map(syms, &Symmetry.map_point(&1, @size, m))]) end)
+      |> Enum.uniq_by(fn {m, _p} ->
+        Enum.min([m | Enum.map(syms, &Symmetry.map_point(&1, @size, m))])
+      end)
       |> Enum.take(@opening_choices)
       |> Enum.map(&elem(&1, 0))
 
@@ -356,7 +360,9 @@ defmodule Go.Library.Maker do
   # The board after the top move of Red (the first move that the mistake
   # search checks), when Red played it.
   defp top_board(state, line, policy) do
-    case policy |> Enum.reject(&(elem(&1, 0) == :pass)) |> Enum.max_by(&elem(&1, 1), fn -> nil end) do
+    case policy
+         |> Enum.reject(&(elem(&1, 0) == :pass))
+         |> Enum.max_by(&elem(&1, 1), fn -> nil end) do
       {top, _p} -> if line ++ [{:red, top}] == Enum.reverse(state.moves), do: state.board
       nil -> nil
     end
@@ -681,7 +687,13 @@ defmodule Go.Library.Maker do
   def fight(board, puzzle, report) do
     group = Board.group(board, puzzle.goal.target)
     moves = [puzzle.answer | report.traps]
-    near = for p <- group.liberties ++ moves, q <- Board.neighbors(board, p), Board.get(board, q), do: q
+
+    near =
+      for p <- group.liberties ++ moves,
+          q <- Board.neighbors(board, p),
+          Board.get(board, q),
+          do: q
+
     group.stones ++ group.liberties ++ moves ++ next_groups(board, group) ++ near
   end
 

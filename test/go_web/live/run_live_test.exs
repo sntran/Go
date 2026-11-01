@@ -114,7 +114,7 @@ defmodule GoWeb.RunLiveTest do
   test "a day that does not match the code is not a daily run", %{conn: conn, player: player} do
     date = Runs.today(nil)
     {:ok, _view, _html} = live(conn, "/run/#{@seed}?day=#{date}")
-    assert Progress.run_place(player, @seed).daily == (if Runs.daily_code(date) == @seed, do: date)
+    assert Progress.run_place(player, @seed).daily == if(Runs.daily_code(date) == @seed, do: date)
   end
 
   test "an old link with no version opens the run of version 1", %{conn: conn} do
@@ -156,7 +156,11 @@ defmodule GoWeb.RunLiveTest do
     # Each stage result stays for a later leaderboard: 3 stars, no help.
     results = Progress.stage_results(player) |> Enum.filter(&(&1.seed == @seed))
     assert length(results) == 5
-    assert Enum.all?(results, fn st -> Enum.all?(st.results, &(&1.stars == 3 and &1.help == 0)) end)
+
+    assert Enum.all?(results, fn st ->
+             Enum.all?(st.results, &(&1.stars == 3 and &1.help == 0))
+           end)
+
     assert [%{seed: @seed}] = Progress.finished_runs(player)
   end
 
@@ -189,7 +193,10 @@ defmodule GoWeb.RunLiveTest do
     board = Go.Library.board_at(stage.story, moment.index)
 
     outside =
-      Enum.find(Go.Board.legal_moves(board, :blue), &(not Go.Library.in_window?(moment.window, &1)))
+      Enum.find(
+        Go.Board.legal_moves(board, :blue),
+        &(not Go.Library.in_window?(moment.window, &1))
+      )
 
     if outside do
       html = tap_point(view, outside)
@@ -262,7 +269,11 @@ defmodule GoWeb.RunLiveTest do
         _ -> tap_point(view, p)
       end
 
-    assert text(html, "#fb-title") in ["You caught Red!", "Your fort is safe!", "Your fort escaped the attack!"]
+    assert text(html, "#fb-title") in [
+             "You caught Red!",
+             "Your fort is safe!",
+             "Your fort escaped the attack!"
+           ]
   end
 
   test "a shared link gives a new player the same games", %{conn: conn, player: player} do
@@ -278,7 +289,8 @@ defmodule GoWeb.RunLiveTest do
     assert board_part(html) == board_part(html2)
   end
 
-  defp board_part(html), do: html |> LazyHTML.from_document() |> LazyHTML.query("#board") |> LazyHTML.to_html()
+  defp board_part(html),
+    do: html |> LazyHTML.from_document() |> LazyHTML.query("#board") |> LazyHTML.to_html()
 
   test "the home page starts a new run and the daily run", %{conn: conn} do
     {:ok, _view, html} = live(conn, ~p"/")

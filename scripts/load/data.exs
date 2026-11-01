@@ -3,7 +3,7 @@
 # of the shown answer line, and one wrong first tap. Only this tool knows
 # the answers; the browser never gets them.
 #
-#   mix run scripts/load/data.exs > /tmp/load-data.json
+#   OUT=/tmp/load-data.json mix run scripts/load/data.exs
 alias Go.{Board, Book, Library, Play, Puzzle, Runs}
 
 version = Library.newest()
@@ -34,4 +34,4 @@ runs =
     %{code: code, stages: stages}
   end
 
-IO.puts(JSON.encode!(runs))
+File.write!(System.fetch_env!("OUT"), JSON.encode!(runs))

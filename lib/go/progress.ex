@@ -55,7 +55,7 @@ defmodule Go.Progress do
   def handle_call({:load, player}, _from, state) do
     unless :ets.member(@table, {player, :__loaded__}) do
       rows =
-        Repo.all(from p in "progress", where: p.player == ^player, select: {p.key, p.value})
+        Repo.all(from(p in "progress", where: p.player == ^player, select: {p.key, p.value}))
 
       keys = Map.new(@keys, &{key_text(&1), &1})
 
@@ -76,7 +76,7 @@ defmodule Go.Progress do
   @doc "The attempts of a player, the newest first."
   def attempts(player) do
     Repo.all(
-      from a in "attempts", where: a.player == ^player, order_by: [desc: a.id], select: a.value
+      from(a in "attempts", where: a.player == ^player, order_by: [desc: a.id], select: a.value)
     )
     |> Enum.map(&decode/1)
   end
@@ -241,7 +241,8 @@ defmodule Go.Progress do
   end
 
   defp load(player) do
-    unless :ets.member(@table, {player, :__loaded__}), do: GenServer.call(__MODULE__, {:load, player})
+    unless :ets.member(@table, {player, :__loaded__}),
+      do: GenServer.call(__MODULE__, {:load, player})
   end
 
   # The key as text: the same text in each version of Erlang.

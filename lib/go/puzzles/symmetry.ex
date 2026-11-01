@@ -37,7 +37,9 @@ defmodule Go.Puzzles.Symmetry do
   @doc "The symmetry of `a` after `b`: `map_point(compose(a, b), …) = map_point(a, map_point(b, …))`."
   def compose(a, b) do
     Enum.find(all(), fn c ->
-      Enum.all?([{0, 1}, {1, 3}, {2, 0}], fn p -> map_point(c, 9, p) == map_point(a, 9, map_point(b, 9, p)) end)
+      Enum.all?([{0, 1}, {1, 3}, {2, 0}], fn p ->
+        map_point(c, 9, p) == map_point(a, 9, map_point(b, 9, p))
+      end)
     end)
   end
 
@@ -56,7 +58,9 @@ defmodule Go.Puzzles.Symmetry do
         answer: p.answer && f.(p.answer),
         goal: %{p.goal | target: f.(p.goal.target)},
         wrong: Map.new(p.wrong, fn {pt, t} -> {f.(pt), map_reply(t, f)} end),
-        sym: compose(sym, p.sym)
+        # A book is for the unturned board, so the puzzle keeps the turn.
+        # With no book yet, the book will be for this board (sym 0).
+        sym: if(p.book, do: compose(sym, p.sym), else: 0)
     }
   end
 
