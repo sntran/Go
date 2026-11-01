@@ -83,7 +83,17 @@ The whole board shows. At a moment, the part outside the fight is dimmed. The wi
 - Continue a run after a reload, and open a run from its shared link.
 - Each server action stays under 1 s, also in a run.
 
-## 5. Not in this plan
+## 5. Changes after the audit of the first library
+
+- **Versions.** Each library file is a version (`priv/library/stories-N.json`), and the old files stay. A run code has the version and the seed (`/run/2-8F3K`). An old link with no version opens version 1. A new run uses the newest version.
+- **Progress after a deploy.** The progress (results, runs, stage results, attempts) is in SQLite (`Go.Repo`): on Workers, the SQLite storage of the Durable Object.
+- **The window** also holds each stone next to a road of the target, next to the answer and next to each trap.
+- **Red answers as the shown answer.** While the player follows the stored answer line, Red prefers the red move of the line.
+- **Openings.** For the first 8 moves, the maker takes one of the 6 best different moves (not more than 1.5 points worse than the best). A game whose first 10 moves are the same as in 2 stories stops at move 10. The 14 stories that were the same game as another story are not in version 2.
+- **Near moments.** Each difference under 8 points is checked again with 200 visits. A moment under 5 points is dropped.
+- **The daily run** uses the date of the player (from the browser), when that date is today somewhere on Earth. Else, the UTC date. A new version is used for the daily runs from 2 days after it is made. The results of a daily run keep its date.
+
+## 6. Not in this plan
 
 - New worlds, and a change of the look. Ask me first.
 - The leaderboard.

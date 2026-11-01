@@ -38,7 +38,7 @@ defmodule Go.Library.MakerTest do
       end
     end
 
-    def score({:board, _policy}, [{:blue, {r, c}}], _visits), do: -0.5 * (abs(r - 4) + abs(c - 4))
+    def score({:board, _policy}, [{:blue, {r, c}}], _visits), do: -0.3 * (abs(r - 4) + abs(c - 4))
     def score(_state, _moves, _visits), do: 0.0
   end
 

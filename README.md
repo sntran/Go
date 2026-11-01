@@ -28,8 +28,10 @@ best move. A seed chooses the run, so a friend can play the same run. See
 - Erlang/OTP 29 and Elixir 1.20. Use a local installation, or the tools of
   [BEAM.com](https://github.com/sntran/BEAM.com) (`mix.com` and `iex.com`
   in place of `mix` and `iex`).
-- No database. The puzzle bank and the library of stories are data files
-  in `priv/`.
+- The puzzle bank and the library of stories are data files in `priv/`.
+  The progress of the players is in SQLite (`ecto_sqlite3`; the NIF of
+  `exqlite` 0.41.0 is in beam.com). In dev and test, the files are in
+  `tmp/`.
 - Only to make the library again: KataGo and two of its networks (see
   [The library of strong stories](#the-library-of-strong-stories)).
 
@@ -81,10 +83,21 @@ The tests include:
   in the file), a sample of the moments runs the full puzzle checks again,
   a rotated moment keeps its answer (rotated) and passes the checks, and a
   test story whose moments do not change the score is dropped,
-- the runs: the same seed gives the same run, the same rotations and the
-  same moments, also after a restart; a run plays from stage 1 to the
+- the stored answer lines: for each moment of each version of the
+  library, in all 8 rotations, the answer line solves the puzzle with real
+  taps (Red answers as the shown line),
+- the windows: in each version, no stone next to a road of the target,
+  next to the answer or next to a trap is dimmed,
+- the maker: a difference under 8 points is checked again with 200
+  visits; the opening takes different moves; a game stops at move 10 when
+  2 stories have its opening,
+- the runs: the same code gives the same run, the same rotations and the
+  same moments, also after a restart; the run of an old link stays the
+  same in later versions of the library; a run plays from stage 1 to the
   score, with the correct moves and with wrong moves; a run goes on after
-  a reload, and opens from a shared link,
+  a reload and after a restart of the app (the progress is in SQLite),
+  and opens from a shared link; the daily run uses the date of the
+  player only when it is today somewhere,
 - LiveView tests with real taps and clicks for each puzzle flow: the
   correct line, the typical wrong moves and their explanations, "Show the
   better move", "Watch again", "Go back one move", "Try again", the hints
@@ -115,11 +128,15 @@ The plan is in [`docs/plans/story-runs.md`](docs/plans/story-runs.md).
   stages 3 and 4 are longer parts with 3 and 4 moments, and stage 5 is the
   full game, to the score. The stories come from 5 tiers of the library,
   from the easiest grade to the hardest.
-- A seed of 4 letters and digits (for example `8F3K`) chooses the run: the
-  story of each stage, and one of the 8 rotations or mirrors. The server
-  makes the choices with its own random generator from the seed, so the
-  same seed always gives the same run. No neural network runs on the
-  server. The texts come from the rotated board.
+- A run code has the version of the library and a seed of 4 letters and
+  digits, for example `2-8F3K`. The seed chooses the run: the story of
+  each stage, and one of the 8 rotations or mirrors. The server makes the
+  choices with its own random generator from the seed, so the same code
+  always gives the same run, also when the library has a new version (each
+  version stays in `priv/library`). A new run uses the newest version. An
+  old link with no version (`/run/8F3K`) opens the run of version 1. No
+  neural network runs on the server. The texts come from the rotated
+  board.
 - The level of the player (1 to 3, from the ideas that the player knows in
   the worlds and the runs that the player finished well) chooses which
   moments are puzzles. The computer plays the other moments. A stronger
@@ -128,10 +145,19 @@ The plan is in [`docs/plans/story-runs.md`](docs/plans/story-runs.md).
 - The whole board shows. During a puzzle, the part outside the fight is
   dimmed. A tap there still plays.
 - The home page has "Continue the run", "Start a new run" and "Play the
-  daily run" (one seed for each day, the same for all players). The link
-  `/run/8F3K` opens a run, and the run page shows its seed.
+  daily run". The link `/run/2-8F3K` opens a run, and the run page shows
+  its code.
+- The daily run: one run for each date, the same for all players of that
+  date. The date is the date of the player: the browser sends it. The
+  server takes it only when it is today somewhere on Earth (not more than
+  14 hours before or 12 hours after the UTC date), so a changed time zone
+  cannot open the run of tomorrow early. With no date, the server uses the
+  UTC date. A new version of the library is used for the daily runs from
+  2 days after it is made, so all players of one date play the same run.
+  The results of a daily run keep its date, so players can compare.
 - The place in a run and the result of each stage (the stars and the help
-  of each puzzle) stay in `Go.Progress`, for a later leaderboard.
+  of each puzzle) stay in `Go.Progress`, in SQLite, for a later
+  leaderboard. They stay after a new deploy.
 
 ## The library of strong stories
 
@@ -140,24 +166,33 @@ mix go.gen.library --count 100   # 100 more stories
 ```
 
 The task makes the stories offline, on a computer or in CI. It never
-runs on the server. It adds the new stories to `priv/library/stories.json`,
-and it writes the report `docs/library-report.md`. The library file keeps
-the next seed, so a new run never plays a seed again. When a run stops
-early, the next run goes on from the parts file `library-parts.jsonl`.
+runs on the server. It writes a new version of the library: the stories
+of the newest version and the new stories, in a new file
+`priv/library/stories-N.json`. A change of the library (one story more
+or less) changes almost all runs, so each change is a new version, and
+the old files stay for the old links. The task also writes the report
+`docs/library-report.md`. The library file keeps the next seed, so the
+task never plays a seed again. When a run of the task stops early, the
+next run goes on from the parts file `library-parts.jsonl`.
 
 How the maker works (`Go.Library.Maker`):
 
 1. **The games.** KataGo plays both sides at the same strength: each move
-   comes from the policy of the strong 9x9 network. The first 8 moves come
-   by chance from the good moves, so each seed gives a different real
-   opening on the whole board.
+   comes from the policy of the strong 9x9 network. For the first 8
+   moves, the game takes one of the 6 best different moves of the policy
+   by chance (the copies of a move under a symmetry of the board count one
+   time), when it is not more than 1.5 points worse than the best of them.
+   A game whose first 10 moves (with the rotations) are the same as in 2
+   stories of the library stops at move 10, and a game that is the same as
+   a story is dropped.
 2. **Red's mistakes.** Red makes a realistic mistake only at a moment that
    becomes a puzzle: one of its top policy moves that gives Blue a puzzle
    that passes all checks. Blue then plays the answer.
 3. **A moment matters.** It passes the normal puzzle checks, it has at
    least one tempting wrong move, and by the score estimate of KataGo the
-   answer is better than each tempting wrong move by at least 5 points.
-   The answer is also nearly the best move on the whole board (not more
+   answer is better than each tempting wrong move by at least 5 points
+   (after the game: a search of 16 visits, and each difference under 8
+   points again with 200 visits). The answer is also nearly the best move on the whole board (not more
    than 2 points worse than the top move of the policy). Two moments are
    at least 4 moves apart, or 2 moves apart on other groups. A moment with
    the answer of an earlier one (in a ko fight, for example) does not
@@ -169,13 +204,18 @@ How the maker works (`Go.Library.Maker`):
 5. **The window** of a moment is the smallest square of 5x5, 7x7 or 9x9
    points, anywhere on the board, that holds the fight: the target group
    and its roads, the answer, the tempting wrong moves, the groups next to
-   the target, and the answer line.
+   the target, the answer line, and each stone next to a road of the
+   target, next to the answer or next to a tempting wrong move. So no
+   stone that touches the fight is dimmed.
 6. **Grade and rank.** The grade of a story is the mean grade of its
    moments. The rank score gives points when a later moment uses stones
    of an earlier moment, for each different idea, and when the moments
    become harder.
 7. **The book** of each moment has the results of the first moves in the
-   window, and the answer line.
+   window, and the answer line. During play, while the player follows the
+   answer line, Red plays the red moves of the line (when they are as good
+   as its best move). So a player who repeats the shown answer wins, also
+   on a turned board.
 
 ### KataGo
 
@@ -394,7 +434,7 @@ puzzles: 43 in the capture world and 47 in the escape world.
 | The texts after a wrong move | `lib/go/explain.ex` |
 | The puzzle data, the bank, the starter set | `lib/go/puzzle.ex`, `lib/go/puzzles.ex`, `lib/go/puzzles/` |
 | The generator, its templates and checks | `lib/go/puzzles/generator.ex`, `templates.ex`, `check.ex` |
-| The attempts and the results of each player | `lib/go/progress.ex` |
+| The attempts and the results of each player (SQLite) | `lib/go/progress.ex`, `lib/go/repo.ex` |
 | The library of stories, and its maker (offline, with KataGo) | `lib/go/library.ex`, `lib/go/library/`, `lib/go/katago.ex` |
 | The runs: a seed, 5 stages, the level | `lib/go/runs.ex` |
 | The pages | `lib/go_web/live/`, `lib/go_web/components/board_components.ex` |
@@ -454,14 +494,15 @@ and the stars. Before the server counts a result, it plays the moves again
 with the rules engine. The result of each stage of a run (the stars and
 the help of each puzzle) is stored too. All results come from the plays on
 the server: the leaderboard must never take a move list from the browser.
-The data stays in memory for now.
+The data is in SQLite.
 
 ## Deploy to Cloudflare Workers
 
 The app runs on Cloudflare Workers with
 [BEAM.com](https://github.com/sntran/BEAM.com), as
-`examples/phoenix_demo` of that repository. It uses no database and no
-NIF. These files do the deploy:
+`examples/phoenix_demo` of that repository. Its database is the SQLite
+storage of the Durable Object: beam.com sends each statement of Ecto
+SQLite there, and gives `DATABASE_PATH`. These files do the deploy:
 
 | File | What |
 |---|---|
@@ -473,8 +514,13 @@ NIF. These files do the deploy:
 The Worker is stateful: one Durable Object runs one VM for all the
 requests, as LiveView needs. The Worker needs no secret: the VM makes
 `SECRET_KEY_BASE` one time and keeps it, and `PHX_HOST` is the host of the
-first request. The progress of the players stays in the memory of the
-VM, so a new deploy, or an object that leaves the memory, clears it.
+first request. The progress of the players is in the SQLite storage of
+the Durable Object, so it stays after a new deploy. The migrations run at
+each start. The SQLite of Workers takes only text and numbers, so
+`Go.Progress` keeps each value as text (an Erlang term in Base64).
+
+I checked this with `wrangler dev`: a run in progress went on at the same
+puzzle after a restart of the Worker.
 
 ### Deploy at each push (Workers Builds)
 
