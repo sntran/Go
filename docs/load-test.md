@@ -177,10 +177,44 @@ measured the time of a tap. The memory columns are old.
 By the time of a tap, one Durable Object serves about 150 players. By the
 memory, it serves 5 who start together.
 
-## Not tested yet
+## On Cloudflare (go-staging)
 
-- Cloudflare itself. `wrangler dev` does not apply the 128 MB, so this
-  test applies it from the log lines. A separate Worker (`go-staging`)
-  would show the real limit with 1, 3, 5, 10 and 20 players.
+A separate Worker, `go-staging` (the same `app.com` and `wrangler.jsonc`,
+with another name), on the account of the project. Before each step, a
+new deploy gave a new VM. `scripts/load/run.mjs` ran from a computer in
+the US, with `--url https://go-staging.fifo.workers.dev`, for 90 s:
+
+| Players | Runs | Result | Tap → blue stone, p95 | Red's reply less 700 ms, p95 | Join, p95 |
+|---:|---:|---|---:|---:|---:|
+| 1 | 1 | pass | 142 ms | 122 ms | 1.4 s |
+| 3 | 1 | pass | 144 ms | 132 ms | 1.4 s |
+| 5 | 2 | pass, pass | 128 to 149 ms | 149 to 153 ms | 1.5 to 1.7 s |
+| 7 | 1 | reset | | | |
+| 10 | 4 | reset, pass, pass, reset | 132 to 141 ms (when it passed) | 162 to 180 ms | 1.2 to 1.5 s |
+| 20 | 2 | reset, reset | | | |
+
+"Reset": in the middle of the test, the WebSockets of all players closed
+at the same time, and the requests of the Worker ended with
+`responseStreamDisconnected`. This is what a reset of the Durable Object
+looks like. `wrangler tail` did not give the events of the WebSockets of
+the Durable Object (only some events of its plain requests, for example
+`beam: ready in 25 ms ..., memory 25 MB` and a first peak of 37 MB), so I
+have no log line that names the cause. The 128 MB is the likely cause,
+because the reset comes with more players, as `wrangler dev` predicts.
+
+So on Cloudflare, one Durable Object serves 5 players who start at the
+same time with no reset in these runs; 7 already reset once, and 10
+resets about half of the time. The times on Cloudflare include the
+network from my computer (about 100 ms).
+
+A browser reconnects after a reset, and the run goes on at the saved
+place (the place is in SQLite), but the player sees the page reload.
+The load tool does not reconnect.
+
+`go-staging` is still deployed. Delete it with `npx wrangler delete
+--name go-staging` when you do not need it.
+
+## Not done
+
 - More Durable Objects (one for each group of players): not done, as you
   asked.

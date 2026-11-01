@@ -204,7 +204,9 @@ and a step fails when the VM peak plus `app.com` is over 128 MB:
 
 - By the memory, one Durable Object serves 5 players who start at the
   same time (before this round: not even 1). Players who come one after
-  the other need less.
+  the other need less. On Cloudflare itself (a separate Worker,
+  `go-staging`), 5 players passed in 2 runs of 2; 7 players reset the
+  Durable Object one time, and 10 players in 2 runs of 4.
 - By the time of a tap, it serves about 150 players (an earlier test).
 - The memory of the VM never shrinks, and in WebAssembly it grows far
   above the memory that Erlang uses. `docs/beam-memory.md` is a report
