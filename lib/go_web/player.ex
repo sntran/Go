@@ -2,6 +2,10 @@ defmodule GoWeb.Player do
   @moduledoc """
   Gives each browser a player id in the session cookie. There are no
   accounts yet. The progress of a player uses this id.
+
+  The cookie lives for one year (see the session options of
+  `GoWeb.Endpoint`). Each visit writes the player id again, so the cookie
+  is sent again with a new year.
   """
 
   @behaviour Plug
@@ -13,10 +17,7 @@ defmodule GoWeb.Player do
 
   @impl true
   def call(conn, _opts) do
-    case get_session(conn, "player_id") do
-      nil -> put_session(conn, "player_id", new_id())
-      _ -> conn
-    end
+    put_session(conn, "player_id", get_session(conn, "player_id") || new_id())
   end
 
   @doc "The session of the live views: the player id."

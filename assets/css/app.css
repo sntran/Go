@@ -267,6 +267,11 @@ a.world-link:hover { border-color: var(--accent); }
 .story-start { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .story-start .pill { font-size: 1.1rem; padding: 12px 22px; }
 .story-where { color: var(--muted); font-weight: 700; }
+/* The page "Move my progress to another device". */
+.move-code { font-family: var(--display); font-size: 2rem; font-weight: 700; letter-spacing: 3px; margin: 8px 0; }
+.code-input { font-size: 1.3rem; letter-spacing: 2px; text-transform: uppercase; padding: 10px 12px; border: 2px solid var(--rule); border-radius: 12px; background: var(--panel); color: var(--fg); width: 100%; max-width: 260px; margin: 8px 0; }
+.move-link { margin-top: 24px; }
+.move-link a { color: var(--accent); font-weight: 700; }
 .stage-line .stars { margin-right: 8px; letter-spacing: 1px; }
 .intro h2 { font-family: var(--display); font-weight: 700; font-size: 1.4rem; margin: 0; }
 .world { display: grid; gap: 4px; }

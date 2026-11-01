@@ -36,6 +36,9 @@ defmodule Go.Runs do
 
   def stages, do: @stages
 
+  @doc "The characters of the codes: no 0, O, 1 and I, which look the same."
+  def alphabet, do: @alphabet
+
   ## Seeds
 
   @doc "A new seed, by chance."

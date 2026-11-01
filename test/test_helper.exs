@@ -3,6 +3,8 @@
 Go.Repo.query!("DELETE FROM progress")
 Go.Repo.query!("DELETE FROM attempts")
 Go.Repo.query!("DELETE FROM library_versions")
+Go.Repo.query!("DELETE FROM transfer_codes")
+Go.Repo.query!("DELETE FROM transfer_tries")
 Go.Library.Seen.reload()
 
 ExUnit.start()

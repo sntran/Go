@@ -102,6 +102,9 @@ defmodule GoWeb.HomeLive do
             <% end %>
           </li>
         </ul>
+        <p class="move-link">
+          <.link navigate={~p"/move"} id="move-link">Move my progress to another device</.link>
+        </p>
       </main>
     </Layouts.app>
     """

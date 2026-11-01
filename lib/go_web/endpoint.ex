@@ -8,7 +8,10 @@ defmodule GoWeb.Endpoint do
     store: :cookie,
     key: "_go_key",
     signing_salt: "nxw+TtoU",
-    same_site: "Lax"
+    same_site: "Lax",
+    # The player id is in this cookie: it must stay when the browser closes.
+    # GoWeb.Player sends it again on each visit, so the year starts again.
+    max_age: 365 * 24 * 60 * 60
   ]
 
   socket "/live", Phoenix.LiveView.Socket,

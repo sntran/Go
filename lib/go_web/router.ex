@@ -23,7 +23,10 @@ defmodule GoWeb.Router do
       live "/play/:world", PuzzleLive
       live "/worlds/:world", WorldLive
       live "/run/:seed", PuzzleLive, :run
+      live "/move", MoveLive
     end
+
+    post "/move", MoveController, :create
   end
 
   # Other scopes may use custom stacks.
