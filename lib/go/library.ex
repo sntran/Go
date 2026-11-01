@@ -52,7 +52,6 @@ defmodule Go.Library do
   @dir "priv/library"
   @size 9
   @pass 81
-  @red_bit 128
 
   ## Reading
 
@@ -217,11 +216,17 @@ defmodule Go.Library do
       source: :generated,
       grade: moment.grade,
       hide_roads: Grade.hide_roads?(moment.grade),
-      book: moment.book
+      book: book(moment.book),
+      sym: Map.get(story, :sym, 0)
     }
 
     %{puzzle | title: Generator.title(puzzle), say: say(moment.goal)}
   end
+
+  # The book stays as text (Base64) in memory, until a puzzle needs it:
+  # the books of all versions are too big to keep as maps.
+  defp book(text) when is_binary(text), do: text |> Base.decode64!() |> Go.Book.decode()
+  defp book(book), do: book
 
   defp say(%{type: :capture}),
     do: "This is a moment of the game. Look at the board, and find the weak red fort. Catch it!"
@@ -237,28 +242,30 @@ defmodule Go.Library do
 
   @doc """
   Turns or mirrors a whole story with one of the 8 symmetries of
-  `Go.Puzzles.Symmetry`: the moves, the moments, the windows and the books.
+  `Go.Puzzles.Symmetry`: the moves, the moments and the windows. The books
+  stay unturned: the story keeps the symmetry in `sym`, and each puzzle
+  gets it (see `Go.Book`).
   """
   def rotate(story, 0), do: story
 
   def rotate(story, sym) do
     f = &Symmetry.map_point(sym, @size, &1)
 
-    %{
-      story
-      | moves: map_line(story.moves, f),
-        moments:
-          Enum.map(story.moments, fn m ->
-            %{
-              m
-              | goal: %{m.goal | target: f.(m.goal.target)},
-                answer: f.(m.answer),
-                window: map_window(m.window, f),
-                diffs: Enum.map(m.diffs, fn {t, d} -> {f.(t), d} end),
-                book: Symmetry.map_book(m.book, f)
-            }
-          end)
-    }
+    story
+    |> Map.put(:sym, sym)
+    |> Map.merge(%{
+      moves: map_line(story.moves, f),
+      moments:
+        Enum.map(story.moments, fn m ->
+          %{
+            m
+            | goal: %{m.goal | target: f.(m.goal.target)},
+              answer: f.(m.answer),
+              window: map_window(m.window, f),
+              diffs: Enum.map(m.diffs, fn {t, d} -> {f.(t), d} end)
+          }
+        end)
+    })
   end
 
   defp map_line(line, f), do: Enum.map(line, fn {c, m} -> {c, map_move(m, f)} end)
@@ -348,7 +355,7 @@ defmodule Go.Library do
               m.grade.score
             ],
             "diffs" => Enum.map(m.diffs, fn {t, d} -> [byte(t), Float.round(d * 1.0, 1)] end),
-            "book" => Base.encode64(book_bytes(m.book))
+            "tree" => book_text(m.book)
           }
         end),
       "score" => [s.score.blue, s.score.red],
@@ -387,7 +394,9 @@ defmodule Go.Library do
               score: score
             },
             diffs: Enum.map(x["diffs"], fn [t, d] -> {move(t), d} end),
-            book: book_from(Base.decode64!(x["book"]))
+            # The old files had only the first taps ("book"). The tree has
+            # all positions (see Go.Book).
+            book: x["tree"]
           }
         end),
       score: %{blue: Enum.at(m["score"], 0), red: Enum.at(m["score"], 1)},
@@ -405,45 +414,7 @@ defmodule Go.Library do
   defp move(@pass), do: :pass
   defp move(b), do: {div(b, @size), rem(b, @size)}
 
-  defp line_bytes(line) do
-    for {color, m} <- line, into: <<>> do
-      <<byte(m) + if(color == :red, do: @red_bit, else: 0)>>
-    end
-  end
-
-  defp line_from(bytes) do
-    for b <- :binary.bin_to_list(bytes) do
-      if b >= @red_bit, do: {:red, move(b - @red_bit)}, else: {:blue, move(b)}
-    end
-  end
-
-  # The count of entries, then each entry (point, kind, length, line), then
-  # the answer line (length, line).
-  defp book_bytes(book) do
-    entries =
-      for {p, e} <- Enum.sort(book.first), into: <<>> do
-        line = line_bytes(e.line)
-        <<byte(p), kind_byte(e.kind), byte_size(line), line::binary>>
-      end
-
-    answer = line_bytes(book.answer)
-    <<map_size(book.first), entries::binary, byte_size(answer), answer::binary>>
-  end
-
-  defp book_from(<<count, rest::binary>>) do
-    {first, rest} =
-      Enum.map_reduce(1..count//1, rest, fn _, <<p, k, n, line::binary-size(n), rest::binary>> ->
-        {{move(p), %{kind: kind(k), line: line_from(line)}}, rest}
-      end)
-
-    <<n, answer::binary-size(n)>> = rest
-    %{first: Map.new(first), answer: line_from(answer)}
-  end
-
-  defp kind_byte(:solved), do: 0
-  defp kind_byte(:good), do: 1
-  defp kind_byte(:wrong), do: 2
-  defp kind(0), do: :solved
-  defp kind(1), do: :good
-  defp kind(2), do: :wrong
+  defp book_text(nil), do: nil
+  defp book_text(text) when is_binary(text), do: text
+  defp book_text(book), do: book |> Go.Book.encode() |> Base.encode64()
 end

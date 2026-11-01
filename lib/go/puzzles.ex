@@ -154,34 +154,13 @@ defmodule Go.Puzzles do
   end
 
   @doc """
-  Makes the book of a puzzle: the result of each legal first move, and the
-  answer line. The search has no time limit here, so the book has the
-  results of the deep search.
-
-  With `points: list`, the book has only the first moves on these points.
+  Makes the book of a puzzle: the result of each tap in each position that
+  a player can reach (see `Go.Book`).
   """
-  @spec book(Puzzle.t(), keyword()) :: map()
-  def book(%Puzzle{} = puzzle, opts \\ []) do
-    puzzle = %{puzzle | book: nil}
-    start = Go.Play.new(puzzle)
-    legal = Go.Board.legal_moves(start.board, :blue)
-    points = if opts[:points], do: Enum.filter(legal, &(&1 in opts[:points])), else: legal
-
-    first =
-      for point <- points, into: %{} do
-        {:ok, play} = Go.Play.tap(start, point, budget: :infinity)
-
-        entry =
-          case play do
-            %{status: :solved} -> %{kind: :solved, line: []}
-            %{outcome: :continue, pending: line} -> %{kind: :good, line: line}
-            %{outcome: {:failed, _}, pending: line} -> %{kind: :wrong, line: line}
-          end
-
-        {point, entry}
-      end
-
-    %{first: first, answer: Go.Play.answer_line(puzzle)}
+  @spec book(Puzzle.t()) :: map()
+  def book(%Puzzle{} = puzzle) do
+    {book, _slow} = Go.Book.build(puzzle)
+    book
   end
 
   defp world_index(world), do: Enum.find_index(Puzzle.worlds(), &(&1 == world))

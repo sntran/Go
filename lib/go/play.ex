@@ -25,7 +25,9 @@ defmodule Go.Play do
 
   import Kernel, except: [tap: 2]
 
-  alias Go.{Board, Explain, Goal, Puzzle}
+  require Logger
+
+  alias Go.{Board, Book, Explain, Goal, Puzzle}
 
   defstruct [
     :puzzle,
@@ -49,7 +51,8 @@ defmodule Go.Play do
     marks: %{},
     replay: nil,
     thinking: nil,
-    hint_list: []
+    hint_list: [],
+    reply_done: nil
   ]
 
   @type t :: %__MODULE__{}
@@ -120,10 +123,16 @@ defmodule Go.Play do
 
   @doc "True when `think/2` needs no search: the book has the answer."
   @spec quick?(t()) :: boolean()
-  def quick?(%__MODULE__{thinking: %{start?: true, point: point}, puzzle: %Puzzle{book: %{} = book}}),
-    do: Map.has_key?(book.first, point)
+  def quick?(%__MODULE__{status: :thinking, thinking: %{point: point}} = play),
+    do: Book.lookup(play.puzzle, taps_before(play), point) != nil
 
   def quick?(_play), do: false
+
+  # The blue taps before the tap that `place/2` placed.
+  defp taps_before(play), do: for({:blue, p} <- Enum.drop(play.moves, -1), do: p)
+
+  # The blue taps so far.
+  defp taps(play), do: for({:blue, p} <- play.moves, do: p)
 
   defp over_message(%{status: :solved}),
     do: "You solved this puzzle! Tap Next puzzle, or Try again."
@@ -181,14 +190,29 @@ defmodule Go.Play do
   @spec think(t(), keyword()) :: t()
   def think(play, opts \\ [])
 
-  def think(%__MODULE__{status: :thinking, thinking: t} = play, opts) do
-    decision =
-      case book_entry(play) do
-        nil -> search(play, Keyword.get(opts, :budget, Go.Think.budget()))
-        entry -> entry
-      end
+  def think(%__MODULE__{status: :thinking} = play, opts) do
+    case Book.lookup(play.puzzle, taps_before(play), play.thinking.point) do
+      nil ->
+        searched(play, "tap #{inspect(play.thinking.point)}", taps_before(play))
+        apply_decision(play, search(play, Keyword.get(opts, :budget, Go.Think.budget())))
 
-    play = %{play | thinking: nil}
+      %{kind: :solved} ->
+        apply_decision(play, :solved)
+
+      %{kind: :good, line: line, done: done} ->
+        play |> apply_decision({:good, line}) |> Map.put(:reply_done, done)
+
+      %{kind: :wrong, line: line, better: better} ->
+        apply_decision(play, {:wrong, line, better})
+    end
+  end
+
+  def think(play, _opts), do: play
+
+  @doc false
+  # Shows a decision: the goal is reached, or Red replies, or Red punishes.
+  def apply_decision(%__MODULE__{thinking: t} = play, decision) do
+    play = %{play | thinking: nil, reply_done: nil}
 
     case decision do
       :solved ->
@@ -207,21 +231,22 @@ defmodule Go.Play do
     end
   end
 
-  def think(play, _opts), do: play
-
-  defp book_entry(%{
-         thinking: %{start?: true, point: point},
-         puzzle: %Puzzle{book: %{} = book} = p
-       }) do
-    case Map.get(book.first, point) do
-      %{kind: :solved} -> :solved
-      %{kind: :good, line: line} -> {:good, line}
-      %{kind: :wrong, line: line} -> {:wrong, line, p.answer}
-      nil -> nil
-    end
+  @doc false
+  # The better move of a position (for a wrong tap).
+  def better_move(puzzle, board, left, start?, deep?) do
+    prefer = if start?, do: puzzle.answer
+    Goal.blue_move(puzzle.goal, board, left, prefer, deep: deep?)
   end
 
-  defp book_entry(_play), do: nil
+  # A position that the book does not have: the server searches. This
+  # must not happen during play (see Go.Book). The log and the telemetry
+  # event [:go, :play, :search] tell the gap.
+  defp searched(%{puzzle: puzzle}, what, taps) do
+    if Book.full?(puzzle) do
+      Logger.warning("The book of #{puzzle.id} has no #{what} after the taps #{inspect(taps)}")
+      :telemetry.execute([:go, :play, :search], %{count: 1}, %{puzzle: puzzle.id, what: what, taps: taps})
+    end
+  end
 
   # The deep search, with a time limit. When the time is over, the search
   # in the move limit decides (it is fast).
@@ -235,7 +260,10 @@ defmodule Go.Play do
   @doc false
   # The result of the blue move of `play.thinking`. With `deep?` false, it
   # looks only to the move limit.
-  def decide(%{puzzle: puzzle, thinking: t} = play, deep?) do
+  # The option `better` gives the better move of a wrong tap, when the
+  # caller knows it already (the book build: it is the same for all taps
+  # of a position).
+  def decide(%{puzzle: puzzle, thinking: t} = play, deep?, opts \\ []) do
     goal = puzzle.goal
     good = Goal.good_move?(goal, t.before, t.left_before, t.point, deep: deep?)
 
@@ -250,8 +278,8 @@ defmodule Go.Play do
         hand = if t.start?, do: Map.get(puzzle.wrong, t.point)
         reply = if hand, do: Map.get(hand, :reply)
         line = punish_line(goal, play.board, play.left, reply, deep?)
-        prefer = if t.start?, do: puzzle.answer
-        better = Goal.blue_move(goal, t.before, t.left_before, prefer, deep: deep?)
+        better =
+          Keyword.get_lazy(opts, :better, fn -> better_move(puzzle, t.before, t.left_before, t.start?, deep?) end)
         {:wrong, Enum.map(line, fn {color, move, _} -> {color, move} end), better}
     end
   end
@@ -417,11 +445,23 @@ defmodule Go.Play do
 
   defp finish(%{outcome: :continue} = play, before, move, captured) do
     goal = play.puzzle.goal
-    play = %{play | outcome: nil}
+
+    # The book tells if the goal is reached after the reply.
+    done =
+      case play.reply_done do
+        nil ->
+          searched(play, "result after the red reply", taps(play))
+          Goal.reached_after_good?(goal, play.board, play.left)
+
+        done ->
+          done
+      end
+
+    play = %{play | outcome: nil, reply_done: nil}
 
     cond do
       # The last blue move was good, so Blue can still reach the goal.
-      Goal.reached_after_good?(goal, play.board, play.left) ->
+      done ->
         solved(play, captured)
 
       true ->
@@ -569,7 +609,12 @@ defmodule Go.Play do
         play.moves == [] and play.puzzle.answer != nil ->
           [play.puzzle.answer]
 
+        good = Book.hint(play.puzzle, taps(play)) ->
+          good
+
         true ->
+          searched(play, "hint", taps(play))
+
           case Go.Think.within(budget, fn -> Goal.good_moves(goal, play.board, play.left) end) do
             {:ok, good} -> good
             :timeout -> Goal.good_moves(goal, play.board, play.left, deep: false)
@@ -636,7 +681,7 @@ defmodule Go.Play do
   it, when the puzzle has a book.
   """
   @spec answer_line(Puzzle.t()) :: [{Board.color(), Board.point() | :pass}]
-  def answer_line(%Puzzle{book: %{answer: line}}), do: line
+  def answer_line(%Puzzle{book: %{answer: _}} = puzzle), do: Book.answer(puzzle)
 
   def answer_line(%Puzzle{} = puzzle) do
     answer_line(puzzle.goal, Puzzle.board(puzzle), puzzle.goal.moves, puzzle.answer, [], 20)
@@ -773,12 +818,36 @@ defmodule Go.Play do
         {:error, :turns}
 
       {:ok, b, left} when result == :solved ->
-        if solved_in_limit?(goal, moves, b, left), do: :ok, else: {:error, :not_solved}
+        # With a full book, the book tells the result (no search).
+        solved =
+          case Book.full?(puzzle) && solved_by_book?(puzzle, moves) do
+            nil -> solved_in_limit?(goal, moves, b, left)
+            solved -> solved
+          end
+
+        if solved, do: :ok, else: {:error, :not_solved}
 
       {:ok, _b, _left} ->
         :ok
     end
   end
+
+  # Follows the moves in the book: true when they end with a solved tap, or
+  # with the red reply of a good tap that reaches the goal. nil when the
+  # book does not have a position.
+  defp solved_by_book?(puzzle, moves), do: walk(puzzle, [], moves)
+
+  defp walk(puzzle, taps, [{:blue, p} | rest]) do
+    case {Book.lookup(puzzle, taps, p), rest} do
+      {nil, _} -> nil
+      {%{kind: :solved}, []} -> true
+      {%{kind: :good, line: [red], done: true}, [red]} -> true
+      {%{kind: :good, line: [red], done: false}, [red | more]} -> walk(puzzle, taps ++ [p], more)
+      _ -> false
+    end
+  end
+
+  defp walk(_puzzle, _taps, _moves), do: false
 
   defp solved_in_limit?(%{type: :capture} = goal, moves, board, _left),
     do:

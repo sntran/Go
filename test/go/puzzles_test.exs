@@ -225,9 +225,9 @@ defmodule Go.PuzzlesTest do
       end
     end
 
-    test "each puzzle has a book: the answer is its only first move that is not wrong" do
+    test "each puzzle has a full book: the answer is its only first move that is not wrong" do
       for p <- Puzzles.all() do
-        assert %{first: first, answer: [{:blue, answer} | _]} = p.book
+        assert %{nodes: %{[] => %{taps: first}}, answer: [{:blue, answer} | _]} = p.book
         assert answer == p.answer
         not_wrong = for {point, %{kind: kind}} <- first, kind != :wrong, do: point
         assert not_wrong == [p.answer], p.id

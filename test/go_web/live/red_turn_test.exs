@@ -48,11 +48,10 @@ defmodule GoWeb.RedTurnTest do
 
     html = eventually(view, &(stone(&1, {0, 4}) == :red))
     assert text(html, "#message") =~ "Good move!"
-    # This tap is not in the book: the search runs in the background.
+    # This tap is in the book too: no search, and the result shows at once.
     html = tap_point(view, {1, 4})
     assert stone(html, {1, 4}) == :blue
-    assert text(html, "#message") == "Red is thinking…"
-    eventually(view, &(text(&1, "#fb-title") == "You caught Red!"))
+    assert text(html, "#fb-title") == "You caught Red!"
   end
 
   test "Red plays out a long punishment one move at a time", %{conn: conn} do

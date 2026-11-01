@@ -1,10 +1,10 @@
 defmodule Go.SpeedTest do
   @moduledoc """
   A tap must be fast: no server action may take more than 1 s, for the
-  puzzles of the bank and for the puzzles of a run. The first taps use the
-  book of the puzzle. A later tap, or a first tap outside the book of a
-  run puzzle, searches with the time limit of the game (`:think_ms`, 700
-  ms).
+  puzzles of the bank and for the puzzles of a run. Each tap is a lookup in
+  the book of the puzzle (see `Go.Book`; `test/go/book_test.exs` checks
+  that no search runs). The old search, with the time limit of the game
+  (`:think_ms`, 700 ms), is only for a position that a book does not have.
 
   Not async: other tests on the same cores would change the times.
   """
@@ -19,13 +19,6 @@ defmodule Go.SpeedTest do
   defp ms(fun) do
     {us, result} = :timer.tc(fun)
     {div(us, 1000), result}
-  end
-
-  # A run puzzle has a book only for the points of the fight. The test taps
-  # all of them, and 3 other points.
-  defp first_points(%{book: %{first: first}, id: "story-" <> _}, board) do
-    others = Board.legal_moves(board, :blue) |> Enum.reject(&Map.has_key?(first, &1))
-    Map.keys(first) ++ Enum.take_every(others, max(div(length(others), 3), 1))
   end
 
   defp first_points(_puzzle, board), do: Board.legal_moves(board, :blue)
@@ -54,7 +47,7 @@ defmodule Go.SpeedTest do
       {t_answer, _} = ms(fn -> Play.show_answer(start) end)
 
       # A later tap, after the answer and the red reply: the next move of
-      # the answer line, and one other move. They are not in the book.
+      # the answer line, and one other move.
       later =
         case Play.answer_line(@p) do
           [{:blue, a}, {:red, _}, {:blue, b} | _] ->

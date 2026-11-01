@@ -27,7 +27,24 @@ defmodule Go.Puzzles.Symmetry do
     end
   end
 
-  @doc "Applies a symmetry to all points of a puzzle."
+  @doc "The symmetry that undoes `sym`."
+  def inverse(sym) do
+    Enum.find(all(), fn inv ->
+      Enum.all?([{0, 1}, {1, 3}, {2, 0}], fn p -> map_point(inv, 9, map_point(sym, 9, p)) == p end)
+    end)
+  end
+
+  @doc "The symmetry of `a` after `b`: `map_point(compose(a, b), …) = map_point(a, map_point(b, …))`."
+  def compose(a, b) do
+    Enum.find(all(), fn c ->
+      Enum.all?([{0, 1}, {1, 3}, {2, 0}], fn p -> map_point(c, 9, p) == map_point(a, 9, map_point(b, 9, p)) end)
+    end)
+  end
+
+  @doc """
+  Applies a symmetry to all points of a puzzle. The book stays for the
+  unturned board: the puzzle keeps the symmetry in `sym` (see `Go.Book`).
+  """
   @spec transform(Puzzle.t(), 0..7) :: Puzzle.t()
   def transform(%Puzzle{size: size} = p, sym) do
     f = &map_point(sym, size, &1)
@@ -39,19 +56,7 @@ defmodule Go.Puzzles.Symmetry do
         answer: p.answer && f.(p.answer),
         goal: %{p.goal | target: f.(p.goal.target)},
         wrong: Map.new(p.wrong, fn {pt, t} -> {f.(pt), map_reply(t, f)} end),
-        book: map_book(p.book, f)
-    }
-  end
-
-  @doc "Applies a point function to all points of a book (see `Go.Puzzle`)."
-  def map_book(nil, _f), do: nil
-
-  def map_book(book, f) do
-    line = fn l -> Enum.map(l, fn {c, m} -> {c, if(m == :pass, do: :pass, else: f.(m))} end) end
-
-    %{
-      first: Map.new(book.first, fn {p, e} -> {f.(p), %{e | line: line.(e.line)}} end),
-      answer: line.(book.answer)
+        sym: compose(sym, p.sym)
     }
   end
 

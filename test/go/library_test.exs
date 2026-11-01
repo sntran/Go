@@ -95,8 +95,10 @@ defmodule Go.LibraryTest do
 
         # The book: only the answer is not wrong, and the answer line
         # starts with the answer.
-        not_wrong = for {p, %{kind: kind}} <- m.book.first, kind != :wrong, do: p
+        %{nodes: %{[] => %{taps: first}}} = puzzle.book
+        not_wrong = for {p, %{kind: kind}} <- first, kind != :wrong, do: p
         assert not_wrong == [m.answer]
+        assert Map.keys(first) |> Enum.sort() == Board.legal_moves(board, :blue)
         assert [{:blue, a} | _] = Play.answer_line(puzzle)
         assert a == m.answer
       end
@@ -153,7 +155,9 @@ defmodule Go.LibraryTest do
       assert Enum.sort(got.red) == Enum.sort(expected.red)
       assert got.answer == expected.answer
       assert got.goal == expected.goal
+      # The book stays unturned; the puzzle keeps the symmetry.
       assert got.book == expected.book
+      assert got.sym == sym and expected.sym == sym
     end
   end
 

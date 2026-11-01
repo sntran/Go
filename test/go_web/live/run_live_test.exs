@@ -27,7 +27,10 @@ defmodule GoWeb.RunLiveTest do
   defp play_puzzle(view, puzzle, wrong?) do
     if wrong? do
       wrong =
-        Enum.find_value(Enum.sort(puzzle.book.first), fn {p, e} -> if e.kind == :wrong, do: p end)
+        puzzle
+        |> Go.Puzzle.board()
+        |> Go.Board.legal_moves(:blue)
+        |> Enum.find(&match?(%{kind: :wrong}, Go.Book.lookup(puzzle, [], &1)))
 
       if wrong do
         html = tap_point(view, wrong)

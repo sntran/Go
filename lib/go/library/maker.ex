@@ -64,7 +64,6 @@ defmodule Go.Library.Maker do
   @near_best 2
   @max_moves 160
   @check_ms 10_000
-  @book_ms 10_000
   @min_diff 5
   @min_moments 4
   @margin 1..10
@@ -645,7 +644,7 @@ defmodule Go.Library.Maker do
         puzzle = m.puzzle
         grade = Grade.of(puzzle, m.report)
         board = Puzzle.board(puzzle)
-        book = if books?, do: book(puzzle, board, m.report), else: %{first: %{}, answer: []}
+        book = if books?, do: book(puzzle, board, m.report), else: %{nodes: %{}, answer: []}
         answer_line = for {_c, {_, _} = p} <- book.answer, do: p
 
         %{
@@ -695,19 +694,8 @@ defmodule Go.Library.Maker do
     |> Enum.uniq()
   end
 
-  # The book has the first moves in the window of the fight, with a time
-  # limit. The answer and the traps are always in it.
-  defp book(puzzle, board, report) do
-    points = Library.window_points(Library.window(fight(board, puzzle, report)))
-
-    case Go.Think.within(@book_ms, fn -> Puzzles.book(puzzle, points: points) end) do
-      {:ok, book} ->
-        book
-
-      :timeout ->
-        Puzzles.book(puzzle, points: [puzzle.answer | report.traps])
-    end
-  end
+  # The book: each tap in each position that a player can reach.
+  defp book(puzzle, _board, _report), do: Puzzles.book(puzzle)
 
   @doc "The rank score of a story (see the moduledoc)."
   def rank(story) do
