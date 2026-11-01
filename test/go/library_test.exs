@@ -40,6 +40,9 @@ defmodule Go.LibraryTest do
       assert Enum.map(s.moves, &elem(&1, 0)) ==
                Enum.take(Stream.cycle([:blue, :red]), length(s.moves))
 
+      answers = Enum.map(s.moments, & &1.answer)
+      assert answers == Enum.uniq(answers), "two moments have the same answer"
+
       indexes = Enum.map(s.moments, & &1.index)
       assert indexes == Enum.sort(indexes)
       assert s.grade == round(Enum.sum(Enum.map(s.moments, & &1.grade.score)) / length(s.moments))

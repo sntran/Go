@@ -35,10 +35,13 @@ The mix task `mix go.gen.library` makes the library. It runs only on a computer 
 
 1. The normal puzzle checks (`Go.Puzzles.Check`): exactly one correct move, and the tempting wrong moves fail. The moment needs at least one tempting wrong move.
 2. The moment matters: by the score estimate of KataGo, the correct move is better than each tempting wrong move by at least 5 points.
+3. The correct move is also nearly the best move on the whole board: not more than 2 points worse than the top move of the policy. Else the game goes on without the moment.
+4. Two moments are at least 4 moves apart, or 2 moves apart on other groups. A moment with the answer of an earlier moment (in a ko fight, for example) does not count: the computer plays it.
 
 ### The checks of a story
 
-1. At least 4 moments pass both checks.
+0. The game ends with two passes, not at the move limit (160 moves). A cycle of captures can stop a game at the limit.
+1. At least 4 moments pass the checks.
 2. Not more than half of the moments are "capture in 1".
 3. A close game: on the main line, Blue wins by 1 to 10 points, by the KataGo estimate before the end and by the area score at the end.
 

@@ -157,7 +157,13 @@ How the maker works (`Go.Library.Maker`):
 3. **A moment matters.** It passes the normal puzzle checks, it has at
    least one tempting wrong move, and by the score estimate of KataGo the
    answer is better than each tempting wrong move by at least 5 points.
-4. **A story.** At least 4 moments matter, not more than half of them are
+   The answer is also nearly the best move on the whole board (not more
+   than 2 points worse than the top move of the policy). Two moments are
+   at least 4 moves apart, or 2 moves apart on other groups. A moment with
+   the answer of an earlier one (in a ko fight, for example) does not
+   count.
+4. **A story.** The game ends with two passes (not at the move limit of
+   160 moves). At least 4 moments matter, not more than half of them are
    "capture in 1", and the game is close: Blue wins by 1 to 10 points, by
    the score estimate before the end and by the area score at the end.
 5. **The window** of a moment is the smallest square of 5x5, 7x7 or 9x9
@@ -202,7 +208,12 @@ network, the fast network makes these estimates. After the game, a search
 of the strong network (16 visits) checks each moment again, with the same
 limit of 5 points, and the game must be close by its estimate too.
 
-LIBRARY_SPEED
+The speed on my computer (4 CPU cores, no GPU, the Eigen AVX2 build of
+KataGo 1.18.1): the 9x9 network makes about 12 evaluations each second.
+With both networks and 8 games in parallel, the maker played about 12
+games each minute, and about 1 game in 10 made a story: about 1.2 stories
+each minute. The 300 stories took about 4 hours. A computer with a GPU is
+much faster.
 
 ### Licenses of KataGo and its networks
 
@@ -265,7 +276,21 @@ from these programs, not the programs or the networks.
 
 ### The library now
 
-LIBRARY_COUNTS
+- 300 stories, from 3082 games. 1745 moments: capture in 1: 564,
+  capture in 2: 247, capture in 3: 403, escape in 1: 443, escape in 2: 67,
+  escape in 3: 21.
+- 4 to 13 moments in a story. Games of 46 to 112 moves. Blue wins each
+  game by 1 to 10 points. The grades of the stories go from 22 to 48, and
+  the rank scores from 15 to 150.
+- The windows: 611 moments of 5x5, 602 of 7x7, and 532 of 9x9 (the whole
+  board, nothing dimmed).
+- The report for each story: [`docs/library-report.md`](docs/library-report.md).
+
+The size: the library file `priv/library/stories.json` is 475,225 bytes
+(about 1.6 KB for each story, with the books). `app.com` of a release
+with it is 36,186,482 bytes (34.5 MiB, 19.7 MB with gzip). This is under
+the limit of 64 MiB of the Worker, so the library stays in the Worker
+bundle. No R2 is needed.
 
 ## Make the puzzle bank
 

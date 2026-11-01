@@ -167,11 +167,11 @@ defmodule Mix.Tasks.Go.Gen.Library do
 
     For each story: the score of the main line (the area score at the end,
     and the score estimate of KataGo before the end), the grade and the rank
-    score. For each moment: the move,
-    the goal, the answer, the grade, and how many points the answer is better
-    than each tempting wrong move (by the score estimate of KataGo). The
-    points use the KataGo coordinates: the columns A to J (no I) from the
-    left, and the rows 1 to 9 from the bottom.
+    score. For each moment: the move, the goal, the answer, the grade, and
+    how many points the answer is better than each tempting wrong move (by
+    the score estimate of KataGo). The points use the KataGo coordinates:
+    the columns A to J (no I) from the left, and the rows 1 to 9 from the
+    bottom.
 
     ```
     #{Enum.map_join(stories, "\n\n", &Enum.join(Maker.report_lines(&1), "\n"))}

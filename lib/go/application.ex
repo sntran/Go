@@ -12,6 +12,9 @@ defmodule Go.Application do
       {DNSCluster, query: Application.get_env(:go, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Go.PubSub},
       Go.Progress,
+      # Read the puzzle bank and the library one time at the start, so that
+      # no action of a player waits for it.
+      {Task, fn -> {Go.Puzzles.all(), Go.Library.all()} end},
       # Start to serve requests, typically the last entry
       GoWeb.Endpoint
     ]

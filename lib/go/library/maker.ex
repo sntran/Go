@@ -35,7 +35,10 @@ defmodule Go.Library.Maker do
 
   ## The checks of a story
 
-    1. At least 4 moments pass the checks. When more than half of the
+    0. The game ends with two passes (not at the move limit).
+    1. At least 4 moments pass the checks, each with another answer point
+       (a moment with the answer of an earlier one, for example in a ko
+       fight, is not a moment). When more than half of the
        moments are "capture in 1", the maker drops some of them (the
        computer then plays them in the story).
     2. A close game: Blue wins by 1 to 10 points, by the score estimate
@@ -420,15 +423,24 @@ defmodule Go.Library.Maker do
     area = Score.count(final)
     margin = area.blue.total - area.red.total
 
-    with :ok <- enough(game.moments, game.moments),
+    with :ok <- ended(game.moves),
+         :ok <- enough(game.moments, game.moments),
          :ok <- close(margin, range, "the area score"),
          estimate = Evaluator.score(ev, before_end(game.moves), visits),
          :ok <- close(estimate, range, "the estimate"),
          moments = confirm(game, ev, visits),
-         moments = limit_capture_in_1(moments),
+         moments = moments |> distinct() |> limit_capture_in_1(),
          :ok <- enough(moments, game.moments) do
       {:ok, build_story(game, moments, area, estimate, books?)}
     end
+  end
+
+  # A game ends with two passes. A game that stops at the move limit (for
+  # example in a cycle of captures) has no real score.
+  defp ended(moves) do
+    if match?([{_, :pass}, {_, :pass}], Enum.take(moves, -2)),
+      do: :ok,
+      else: {:drop, "the game did not end"}
   end
 
   defp enough(moments, _found) when length(moments) >= @min_moments, do: :ok
@@ -461,6 +473,10 @@ defmodule Go.Library.Maker do
       end
     end)
   end
+
+  # A moment with the answer of an earlier moment (in a ko fight, for
+  # example) teaches nothing new. The computer plays it.
+  defp distinct(moments), do: Enum.uniq_by(moments, & &1.puzzle.answer)
 
   # Not more than half "capture in 1": drop those with the smallest
   # difference first.

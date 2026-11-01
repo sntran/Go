@@ -89,6 +89,12 @@ defmodule Go.Library.MakerTest do
              Maker.story(game, line, margin: (margin + 1)..(margin + 10), books: false)
   end
 
+  test "a game that does not end with two passes is dropped", %{game: game} do
+    line = {LineEvaluator, {:line, game.moves}}
+    game = %{game | moves: Enum.drop(game.moves, -2)}
+    assert Maker.story(game, line, margin: -200..200) == {:drop, "the game did not end"}
+  end
+
   test "a game with too few moments is dropped" do
     game = %{seed: 1, moves: [{:blue, :pass}, {:red, :pass}], moments: [], gave_up: false}
     assert {:drop, "fewer than 4 moments that matter" <> _} = Maker.story(game, nil)
