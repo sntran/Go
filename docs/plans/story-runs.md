@@ -91,7 +91,7 @@ The whole board shows. At a moment, the part outside the fight is dimmed. The wi
 - **Red answers as the shown answer.** While the player follows the stored answer line, Red prefers the red move of the line.
 - **Openings.** For the first 8 moves, the maker takes one of the 6 best different moves (not more than 1.5 points worse than the best). A game whose first 10 moves are the same as in 2 stories stops at move 10. The 14 stories that were the same game as another story are not in version 2.
 - **Near moments.** Each difference under 8 points is checked again with 200 visits. A moment under 5 points is dropped.
-- **The daily run** uses the date of the player (from the browser), when that date is today somewhere on Earth. Else, the UTC date. A new version is used for the daily runs from 2 days after it is made. The results of a daily run keep its date.
+- **The daily run** uses the date of the player (from the browser), when that date is today somewhere on Earth. Else, the UTC date. A new version starts daily runs on the later of its `daily_from` date (2 days after it is made) and the first date that had not started anywhere on Earth when the server first saw it (the server keeps that time in SQLite). So a late deploy never changes a daily run that a player started. The results of a daily run keep its date.
 
 ## 6. Not in this plan
 

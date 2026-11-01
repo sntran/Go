@@ -13,8 +13,8 @@ defmodule Go.Library do
   always a new version, and the old files stay. A run keeps the version of
   its start (see `Go.Runs`), so an old link still opens the same run. A new
   run uses the newest version. The daily run of a date uses the newest
-  version whose `daily_from` date is not after it, so that all players of
-  one date play the same run.
+  version that has started daily runs on that date (see `daily_start/2`),
+  so that all players of one date play the same run.
 
   The file is compact: each move is one byte (`row * 9 + column`, and 81 for
   a pass), in Base64. Blue plays first, and the colors take turns. The
@@ -106,17 +106,34 @@ defmodule Go.Library do
   def path(version), do: Application.app_dir(:go, Path.join(@dir, "stories-#{version}.json"))
 
   @doc """
-  The version of the daily run of a date: the newest version whose
-  `daily_from` date is not after the date (the oldest version when none).
+  The version of the daily run of a date: the newest version whose daily
+  start (`daily_start/2`) is not after the date (the oldest version when
+  none). `first_seen` maps each version to the time when the server first
+  saw it (see `Go.Library.Seen`).
   """
-  def daily_version(date) do
+  def daily_version(date, first_seen) do
     versions()
-    |> Enum.filter(&(Date.compare(daily_from(&1), date) != :gt))
+    |> Enum.filter(fn v ->
+      Date.compare(daily_start(daily_from(v), Map.fetch!(first_seen, v)), date) != :gt
+    end)
     |> List.last()
     |> Kernel.||(List.first(versions()))
   end
 
-  defp daily_from(version) do
+  @doc """
+  The first date of the daily runs of a version: the later of its
+  `daily_from` date, and the first date that had not started anywhere on
+  Earth when the server first saw the version (the date in UTC+14 at that
+  time, plus one day). So a version that is live late never changes a daily
+  run that a player started already.
+  """
+  def daily_start(daily_from, first_seen) do
+    free = first_seen |> DateTime.add(14, :hour) |> DateTime.to_date() |> Date.add(1)
+    if Date.compare(daily_from, free) == :gt, do: daily_from, else: free
+  end
+
+  @doc "The `daily_from` date of a version (from its file)."
+  def daily_from(version) do
     case :persistent_term.get({@key, :daily_from, version}, nil) do
       nil ->
         from = read_head(path(version))[:daily_from]
@@ -257,7 +274,8 @@ defmodule Go.Library do
   ## The window
 
   @doc "The points of a window."
-  def window_points({r0, c0, s}), do: for(r <- r0..(r0 + s - 1), c <- c0..(c0 + s - 1), do: {r, c})
+  def window_points({r0, c0, s}),
+    do: for(r <- r0..(r0 + s - 1), c <- c0..(c0 + s - 1), do: {r, c})
 
   @doc "True when the point is in the window."
   def in_window?({r0, c0, s}, {r, c}), do: r >= r0 and r < r0 + s and c >= c0 and c < c0 + s

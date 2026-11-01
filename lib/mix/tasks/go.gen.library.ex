@@ -12,8 +12,9 @@ defmodule Mix.Tasks.Go.Gen.Library do
   The task makes a new version of the library: the stories of the newest
   version and the new stories, in a new file `priv/library/stories-N.json`.
   The old files stay, so that old runs and old links stay the same (see
-  `Go.Library`). The daily runs use the new version from 2 days after
-  the task (so that all players of one date play the same run).
+  `Go.Library`). The new version gets the `daily_from` date of 2 days
+  after the task: the daily runs use it from then, or later when it is
+  deployed late (see `Go.Library.daily_start/2`).
 
   The task never plays a seed again: the library file keeps the next seed.
   A new game whose first 10 moves (with the rotations) are the same as in

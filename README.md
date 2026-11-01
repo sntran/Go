@@ -152,9 +152,16 @@ The plan is in [`docs/plans/story-runs.md`](docs/plans/story-runs.md).
   server takes it only when it is today somewhere on Earth (not more than
   14 hours before or 12 hours after the UTC date), so a changed time zone
   cannot open the run of tomorrow early. With no date, the server uses the
-  UTC date. A new version of the library is used for the daily runs from
-  2 days after it is made, so all players of one date play the same run.
-  The results of a daily run keep its date, so players can compare.
+  UTC date. The results of a daily run keep its date, so players can
+  compare.
+- A new version of the library starts daily runs only when it is live.
+  When the server first sees a version, it stores the time in SQLite
+  (`Go.Library.Seen`, the table `library_versions`). The version starts
+  daily runs on the later of two dates: its `daily_from` date (2 days
+  after the task made it), and the first date that had not started
+  anywhere on Earth at that time (the date in UTC+14, plus one day). So a
+  version that is deployed late never changes a daily run that a player
+  started already, and all players of one date play the same run.
 - The place in a run and the result of each stage (the stars and the help
   of each puzzle) stay in `Go.Progress`, in SQLite, for a later
   leaderboard. They stay after a new deploy.
@@ -326,7 +333,8 @@ Two versions:
   stories that were the same game as another story, with each difference
   under 8 points checked again with 200 visits (29 moments fell under 5
   points, and 7 stories then had fewer than 4 moments), and 21 new stories
-  with the new openings. The daily runs use it from November 3, 2026.
+  with the new openings. Its `daily_from` date is November 3, 2026: the
+  daily runs use it from then, or later when it is deployed late.
 
 Version 2:
 

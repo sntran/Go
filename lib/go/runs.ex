@@ -43,14 +43,21 @@ defmodule Go.Runs do
 
   @doc "The seed of the daily run: one seed for each day, the same for all players."
   def daily_seed(date \\ Date.utc_today()) do
-    n = :erlang.phash2({:daily_run, Date.to_iso8601(date)}, Integer.pow(length(@alphabet), @length))
+    n =
+      :erlang.phash2({:daily_run, Date.to_iso8601(date)}, Integer.pow(length(@alphabet), @length))
+
     encode(n, @length, "")
   end
 
   defp encode(_n, 0, acc), do: acc
 
   defp encode(n, k, acc),
-    do: encode(div(n, length(@alphabet)), k - 1, <<Enum.at(@alphabet, rem(n, length(@alphabet)))>> <> acc)
+    do:
+      encode(
+        div(n, length(@alphabet)),
+        k - 1,
+        <<Enum.at(@alphabet, rem(n, length(@alphabet)))>> <> acc
+      )
 
   ## Run codes
 
@@ -103,10 +110,11 @@ defmodule Go.Runs do
 
   @doc """
   The code of the daily run of a date: the seed of the date, and the
-  version of the library for the date (see `Go.Library.daily_version/1`).
+  version of the library for the date (see `Go.Library.daily_version/2`).
   All players of one date play the same run.
   """
-  def daily_code(date), do: code(Library.daily_version(date), daily_seed(date))
+  def daily_code(date),
+    do: code(Library.daily_version(date, Library.Seen.all()), daily_seed(date))
 
   @doc """
   The date of the daily run for a player: the date that the browser sends
@@ -130,7 +138,10 @@ defmodule Go.Runs do
   """
   def today_somewhere?(date, now \\ DateTime.utc_now()) do
     first = date |> DateTime.new!(~T[00:00:00], "Etc/UTC") |> DateTime.add(-14, :hour)
-    last = date |> Date.add(1) |> DateTime.new!(~T[00:00:00], "Etc/UTC") |> DateTime.add(12, :hour)
+
+    last =
+      date |> Date.add(1) |> DateTime.new!(~T[00:00:00], "Etc/UTC") |> DateTime.add(12, :hour)
+
     DateTime.compare(now, first) != :lt and DateTime.compare(now, last) == :lt
   end
 
@@ -171,7 +182,10 @@ defmodule Go.Runs do
   # The random generator of a seed. :erlang.phash2/2 and the exsss
   # generator are the same on each computer and in each version.
   defp rng(seed) do
-    :rand.seed_s(:exsss, {:erlang.phash2({seed, 1}), :erlang.phash2({seed, 2}), :erlang.phash2({seed, 3})})
+    :rand.seed_s(
+      :exsss,
+      {:erlang.phash2({seed, 1}), :erlang.phash2({seed, 2}), :erlang.phash2({seed, 3})}
+    )
   end
 
   # 5 tiers from the easiest grade to the hardest. A small library gives
@@ -216,7 +230,11 @@ defmodule Go.Runs do
       story: story,
       sym: sym,
       from: if(full, do: 0, else: max(first.index - @moves_before, 0)),
-      to: if(full, do: length(story.moves), else: min(last.index + 1 + @moves_after, length(story.moves))),
+      to:
+        if(full,
+          do: length(story.moves),
+          else: min(last.index + 1 + @moves_after, length(story.moves))
+        ),
       full: full,
       moments: moments,
       puzzles: puzzles(moments, level)
@@ -244,8 +262,14 @@ defmodule Go.Runs do
     {max_grade, count} = Map.fetch!(@levels, level)
 
     case Enum.filter(moments, &(max_grade == :infinity or &1.grade.score <= max_grade)) do
-      [] -> [Enum.min_by(moments, & &1.grade.score)]
-      list -> list |> Enum.sort_by(&{-&1.grade.score, &1.index}) |> Enum.take(count) |> Enum.sort_by(& &1.index)
+      [] ->
+        [Enum.min_by(moments, & &1.grade.score)]
+
+      list ->
+        list
+        |> Enum.sort_by(&{-&1.grade.score, &1.index})
+        |> Enum.take(count)
+        |> Enum.sort_by(& &1.index)
     end
   end
 

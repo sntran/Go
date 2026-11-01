@@ -17,7 +17,9 @@ defmodule Go.Application do
       Go.Progress,
       # Read the puzzle bank and the library one time at the start, so that
       # no action of a player waits for it.
-      {Task, fn -> {Go.Puzzles.all(), Go.Library.all()} end},
+      # It also stores the time when the server first sees each version of
+      # the library (see Go.Library.Seen).
+      {Task, fn -> {Go.Puzzles.all(), Go.Library.all(), Go.Library.Seen.all()} end},
       # Start to serve requests, typically the last entry
       GoWeb.Endpoint
     ]
