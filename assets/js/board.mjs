@@ -193,9 +193,12 @@ export function render(board, opts = {}) {
     }
   }
 
+  // The rings of the stones in atari, then the stones (as on the server).
+  for (const [a, b] of stones) {
+    if (danger.has(key(a, b))) out.push(`<circle class="alarm" cx="${f(X(b))}" cy="${f(X(a))}" r="${f(r * 1.02)}"/>`);
+  }
   for (const [a, b, color] of stones) {
     const d = danger.has(key(a, b));
-    if (d) out.push(`<circle class="alarm" cx="${f(X(b))}" cy="${f(X(a))}" r="${f(r * 1.02)}"/>`);
     out.push(piece(castle, X(b), X(a), r, color, d ? 'danger' : '', ` data-stone="${a}-${b}" data-color="${color}"`));
   }
 

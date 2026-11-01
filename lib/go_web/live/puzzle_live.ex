@@ -313,7 +313,18 @@ defmodule GoWeb.PuzzleLive do
 
   defp count_path(socket), do: socket
 
-  defp put_play(socket, play), do: assign(socket, play: play, step: socket.assigns.step + 1)
+  # The puzzle, its world and the number of puzzles of the stage change
+  # only with a new puzzle. They are assigns (not values made in render), so
+  # LiveView does not send their texts again after each move.
+  defp put_play(socket, play) do
+    assign(socket,
+      play: play,
+      step: socket.assigns.step + 1,
+      puzzle: play.puzzle,
+      world_text: Worlds.get(play.puzzle.world),
+      run_total: if(socket.assigns.mode == :run, do: length(current_stage(socket).puzzles))
+    )
+  end
 
   ## The run
 
@@ -751,15 +762,11 @@ defmodule GoWeb.PuzzleLive do
 
     assigns =
       assign(assigns,
-        puzzle: play.puzzle,
         board: board,
         feedback: play.replay == nil && play.feedback,
         glow: glow(play),
         atari: atari?(board),
-        busy: Play.busy?(play),
-        world_text: Worlds.get(play.puzzle.world),
-        run_total:
-          if(assigns.mode == :run, do: length(current_stage(%{assigns: assigns}).puzzles))
+        busy: Play.busy?(play)
       )
 
     ~H"""

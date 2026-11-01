@@ -158,7 +158,8 @@ defmodule Go.Library do
 
   @doc "The `daily_from` date of a version (from its file)."
   def daily_from(version),
-    do: Go.Cache.fetch({@key, :daily_from, version}, fn -> read_head(path(version)).daily_from end)
+    do:
+      Go.Cache.fetch({@key, :daily_from, version}, fn -> read_head(path(version)).daily_from end)
 
   @magic "GOLIB1"
 

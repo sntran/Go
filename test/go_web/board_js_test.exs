@@ -28,7 +28,15 @@ defmodule GoWeb.BoardJsTest do
         rem(i, 3) == 0 or i == length(story.moves) - 1 do
       before = Library.board_at(story, i)
       {:ok, board, captured} = Board.play(before, color, move)
-      %{moves: Enum.take(story.moves, i + 1), board: board, captured: captured, color: color, move: move, step: i + 1}
+
+      %{
+        moves: Enum.take(story.moves, i + 1),
+        board: board,
+        captured: captured,
+        color: color,
+        move: move,
+        step: i + 1
+      }
     end
   end
 
@@ -90,7 +98,9 @@ defmodule GoWeb.BoardJsTest do
           look: look,
           step: pos.step,
           moves:
-            Enum.map(pos.moves, fn {c, m} -> [c, if(m == :pass, do: "pass", else: Tuple.to_list(m))] end)
+            Enum.map(pos.moves, fn {c, m} ->
+              [c, if(m == :pass, do: "pass", else: Tuple.to_list(m))]
+            end)
         }
       end
 
@@ -121,8 +131,11 @@ defmodule GoWeb.BoardJsTest do
     svgs = JSON.decode!(json)
     File.rm_rf!(dir)
 
-    for {{pos, look}, svg} <- Enum.zip(for(p <- positions, l <- [:castle, :board], do: {p, l}), svgs) do
-      js = elements(LazyHTML.from_fragment("<svg>" <> svg <> "</svg>") |> LazyHTML.query("svg > *"))
+    for {{pos, look}, svg} <-
+          Enum.zip(for(p <- positions, l <- [:castle, :board], do: {p, l}), svgs) do
+      js =
+        elements(LazyHTML.from_fragment("<svg>" <> svg <> "</svg>") |> LazyHTML.query("svg > *"))
+
       server = server_svg(pos, look)
 
       # The stones that fall at one time are on other points: their order

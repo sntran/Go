@@ -103,9 +103,10 @@ defmodule GoWeb.RedTurnTest do
 
   # The stage animation plays in the browser: the server sends the moves
   # one time, and goes on when the hook says "anim_done".
-  test "the server sends the moves of the animation one time, and anim_done goes to the puzzle", %{
-    conn: conn
-  } do
+  test "the server sends the moves of the animation one time, and anim_done goes to the puzzle",
+       %{
+         conn: conn
+       } do
     {:ok, view, html} = live(conn, ~p"/run/#{Go.Runs.new_code()}")
     [_, id, steps] = Regex.run(~r/id="(anim-\d+)"[^>]*data-steps="([^"]*)"/, html)
     steps = steps |> String.replace("&quot;", "\"") |> JSON.decode!()
