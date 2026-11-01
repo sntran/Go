@@ -1,10 +1,16 @@
 defmodule Go.Progress do
   @moduledoc """
   The progress of each player: the attempts, the result of each puzzle,
-  and the look (castles or the real board).
+  the runs, the results of the stages, and the look (castles or the real
+  board).
 
-  The data stays in memory (an ETS table). There is no database yet. The
-  leaderboard comes later, and it will use the attempts:
+  The data stays in SQLite (`Go.Repo`), so it stays after a restart or a
+  deploy. An ETS table keeps a copy in memory: the first read of a player
+  loads all data of the player from the database, and each write goes to
+  both. The table `progress` has one value for each player and key, and
+  the table `attempts` has the attempts.
+
+  The leaderboard comes later, and it will use the attempts:
 
     * Each attempt has the puzzle id, the list of moves, the result and
       the stars.
@@ -20,7 +26,9 @@ defmodule Go.Progress do
 
   use GenServer
 
-  alias Go.{Play, Puzzle}
+  import Ecto.Query
+
+  alias Go.{Play, Puzzle, Repo}
 
   @table __MODULE__
   @learned_days 3
@@ -38,12 +46,34 @@ defmodule Go.Progress do
     {:ok, nil}
   end
 
+  # One process loads the data of a player, so that two loads do not mix.
+  @impl true
+  def handle_call({:load, player}, _from, state) do
+    unless :ets.member(@table, {player, :__loaded__}) do
+      rows =
+        Repo.all(from p in "progress", where: p.player == ^player, select: {p.key, p.value})
+
+      for {key, value} <- rows do
+        :ets.insert(@table, {{player, decode(key)}, decode(value)})
+      end
+
+      :ets.insert(@table, {{player, :__loaded__}, true})
+    end
+
+    {:reply, :ok, state}
+  end
+
   @doc "The results of a player: a map from a puzzle id to its result."
   @spec results(String.t()) :: map()
   def results(player), do: get(player, :results, %{})
 
   @doc "The attempts of a player, the newest first."
-  def attempts(player), do: get(player, :attempts, [])
+  def attempts(player) do
+    Repo.all(
+      from a in "attempts", where: a.player == ^player, order_by: [desc: a.id], select: a.value
+    )
+    |> Enum.map(&decode/1)
+  end
 
   @doc """
   The number of puzzles of `world` since the last review (see `Go.Path`).
@@ -81,8 +111,18 @@ defmodule Go.Progress do
   help of each puzzle. The results come from the plays on the server,
   never from the browser.
   """
-  def record_stage(player, %{seed: seed, level: level, stage: stage, results: results}) do
-    entry = %{seed: seed, level: level, stage: stage, results: results, at: DateTime.utc_now()}
+  def record_stage(player, %{seed: seed, level: level, stage: stage, results: results} = place) do
+    # The results of a daily run have the date of the run (not the time of
+    # play), so that all players of one date can compare.
+    entry = %{
+      seed: seed,
+      level: level,
+      stage: stage,
+      results: results,
+      daily: Map.get(place, :daily),
+      at: DateTime.utc_now()
+    }
+
     others = Enum.reject(stage_results(player), &(&1.seed == seed and &1.stage == stage))
     put(player, :stage_results, [entry | others])
   end
@@ -134,7 +174,10 @@ defmodule Go.Progress do
         at: DateTime.utc_now()
       }
 
-      put(player, :attempts, [attempt | attempts(player)])
+      Repo.insert_all("attempts", [
+        %{player: player, puzzle_id: puzzle.id, value: :erlang.term_to_binary(attempt)}
+      ])
+
       put(player, :results, update(results(player), puzzle.id, result, attempt.stars, today))
       {:ok, attempt}
     end
@@ -169,6 +212,8 @@ defmodule Go.Progress do
     do: Map.put_new(results, id, %{status: :tried})
 
   defp get(player, key, default) do
+    load(player)
+
     case :ets.lookup(@table, {player, key}) do
       [{_, value}] -> value
       [] -> default
@@ -176,7 +221,24 @@ defmodule Go.Progress do
   end
 
   defp put(player, key, value) do
+    load(player)
+
+    Repo.insert_all(
+      "progress",
+      [%{player: player, key: :erlang.term_to_binary(key), value: :erlang.term_to_binary(value)}],
+      on_conflict: {:replace, [:value]},
+      conflict_target: [:player, :key]
+    )
+
     :ets.insert(@table, {{player, key}, value})
     :ok
   end
+
+  defp load(player) do
+    unless :ets.member(@table, {player, :__loaded__}), do: GenServer.call(__MODULE__, {:load, player})
+  end
+
+  # The data is from this app only. The atoms of the data are atoms of the
+  # code, so `:safe` is enough.
+  defp decode(binary), do: :erlang.binary_to_term(binary, [:safe])
 end

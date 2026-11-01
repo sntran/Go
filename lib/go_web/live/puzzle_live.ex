@@ -49,7 +49,7 @@ defmodule GoWeb.PuzzleLive do
 
     case socket.assigns.mode do
       :run ->
-        mount_run(assign(socket, world: nil), params["seed"])
+        mount_run(assign(socket, world: nil, seed: nil), params["seed"])
 
       :world ->
         case Worlds.parse(params["world"]) do
@@ -60,8 +60,11 @@ defmodule GoWeb.PuzzleLive do
   end
 
   @impl true
-  def handle_params(_params, _uri, %{assigns: %{mode: :run}} = socket) do
-    {:noreply, start_run(socket)}
+  def handle_params(_params, _uri, %{assigns: %{mode: :run, seed: nil}} = socket),
+    do: {:noreply, socket}
+
+  def handle_params(params, _uri, %{assigns: %{mode: :run}} = socket) do
+    {:noreply, start_run(socket, params["day"])}
   end
 
   def handle_params(params, _uri, socket) do
@@ -312,14 +315,22 @@ defmodule GoWeb.PuzzleLive do
 
   defp mount_run(socket, param) do
     cond do
+      Library.newest() == nil ->
+        {:ok, socket |> put_flash(:error, "There are no stories yet.") |> push_navigate(to: ~p"/")}
+
       param == "new" ->
-        {:ok, push_navigate(socket, to: ~p"/run/#{Runs.new_seed()}")}
+        {:ok, push_navigate(socket, to: ~p"/run/#{Runs.new_code()}")}
+
+      # The date of the player comes with the connection of the browser.
+      param == "daily" and not connected?(socket) ->
+        {:ok, assign(socket, phase: :loading, page_title: "The daily run")}
 
       param == "daily" ->
-        {:ok, push_navigate(socket, to: ~p"/run/#{Runs.daily_seed()}")}
+        date = Runs.today(get_connect_params(socket)["date"])
+        {:ok, push_navigate(socket, to: ~p"/run/#{Runs.daily_code(date)}?day=#{Date.to_iso8601(date)}")}
 
-      Library.all() == [] ->
-        {:ok, socket |> put_flash(:error, "There are no stories yet.") |> push_navigate(to: ~p"/")}
+      (code = Runs.parse(param)) && code != param ->
+        {:ok, push_navigate(socket, to: ~p"/run/#{code}")}
 
       seed = Runs.parse(param) ->
         {:ok, assign(socket, seed: seed)}
@@ -329,20 +340,40 @@ defmodule GoWeb.PuzzleLive do
     end
   end
 
-  # The place of the player in the run of the seed. A new place starts at
-  # stage 1, and fixes the level of the player for the whole run.
-  defp start_run(socket) do
+  # The place of the player in the run of the code. A new place starts at
+  # stage 1, and fixes the level of the player for the whole run. A daily
+  # run keeps its date (the date must be today somewhere, and the code must
+  # be the code of the date).
+  defp start_run(socket, day) do
     %{player: player, seed: seed} = socket.assigns
 
     place =
       Progress.run_place(player, seed) ||
-        %{seed: seed, level: Runs.level(player), stage: 1, moment: :start, results: []}
+        %{
+          seed: seed,
+          level: Runs.level(player),
+          stage: 1,
+          moment: :start,
+          results: [],
+          daily: daily_date(day, seed)
+        }
 
     Progress.put_run_place(player, place)
 
     socket
     |> assign(run: Runs.run(seed, place.level), place: place, page_title: "Run #{seed}")
     |> resume()
+  end
+
+  defp daily_date(day, code) do
+    with true <- is_binary(day),
+         {:ok, date} <- Date.from_iso8601(day),
+         true <- Runs.today_somewhere?(date),
+         true <- Runs.daily_code(date) == code do
+      date
+    else
+      _ -> nil
+    end
   end
 
   defp resume(%{assigns: %{place: place}} = socket) do
@@ -527,6 +558,17 @@ defmodule GoWeb.PuzzleLive do
   ## View
 
   @impl true
+  def render(%{mode: :run, phase: :loading} = assigns) do
+    ~H"""
+    <Layouts.app flash={@flash}>
+      <main class="done">
+        <h1 id="title">The daily run</h1>
+        <p class="say">Opening the run of your date…</p>
+      </main>
+    </Layouts.app>
+    """
+  end
+
   def render(%{mode: :run, phase: :anim} = assigns) do
     ~H"""
     <Layouts.app flash={@flash}>
@@ -871,6 +913,9 @@ defmodule GoWeb.PuzzleLive do
     <p class="kicker" id="kicker">
       <.link navigate={~p"/"} class="back-link">Home</.link>
       · Run <span id="seed">{@place.seed}</span>
+      <span :if={Map.get(@place, :daily)} id="daily">
+        · Daily run of {Calendar.strftime(@place.daily, "%B %-d")}
+      </span>
       <span :if={is_integer(@place.stage)}>· Stage {@place.stage} of {Runs.stages()}</span>
       <span :if={@puzzle}>· {@puzzle}</span>
     </p>

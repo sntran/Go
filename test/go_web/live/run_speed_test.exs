@@ -23,7 +23,7 @@ defmodule GoWeb.RunSpeedTest do
   @tag timeout: :infinity
   test "each action of a run takes less than 1 s", %{conn: conn} do
     {conn, player} = new_player(conn)
-    seed = "Q7RM"
+    seed = Runs.code(Go.Library.newest(), "Q7RM")
 
     {t, {:ok, view, _html}} = ms(fn -> live(conn, ~p"/run/#{seed}") end)
     times = [{"start", t}]

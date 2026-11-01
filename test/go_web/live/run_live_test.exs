@@ -6,7 +6,7 @@ defmodule GoWeb.RunLiveTest do
 
   alias Go.{Play, Progress, Runs}
 
-  @seed "8F3K"
+  @seed Runs.code(Go.Library.newest(), "8F3K")
 
   setup %{conn: conn} do
     {conn, player} = new_player(conn)
@@ -71,16 +71,53 @@ defmodule GoWeb.RunLiveTest do
   test "Start a new run goes to a run with a new seed, and the page shows the seed", %{conn: conn} do
     assert {:error, {:live_redirect, %{to: "/run/" <> seed}}} = live(conn, ~p"/run/new")
     assert Runs.parse(seed) == seed
+    assert Runs.split(seed) |> elem(0) == Go.Library.newest()
 
     {:ok, _view, html} = live(conn, ~p"/run/#{seed}")
     assert text(html, "#seed") == seed
     assert text(html, "#kicker") =~ "Stage 1 of 5"
   end
 
-  test "the daily run has the seed of the day", %{conn: conn} do
-    daily = Runs.daily_seed()
+  test "the daily run is the run of the date of the player", %{conn: conn, player: player} do
+    date = Runs.today(nil)
+    tomorrow = Date.add(date, 1)
+
+    # No date from the browser: the UTC date.
     assert {:error, {:live_redirect, %{to: to}}} = live(conn, ~p"/run/daily")
-    assert to == "/run/#{daily}"
+    assert to == "/run/#{Runs.daily_code(date)}?day=#{date}"
+
+    # The date of the browser, when it is today somewhere.
+    for day <- [date, tomorrow] do
+      conn = put_connect_params(conn, %{"date" => Date.to_iso8601(day)})
+      expected = if Runs.today_somewhere?(day), do: day, else: date
+      assert {:error, {:live_redirect, %{to: to}}} = live(conn, ~p"/run/daily")
+      assert to == "/run/#{Runs.daily_code(expected)}?day=#{expected}"
+    end
+
+    # A date that is not today anywhere opens the UTC date.
+    conn2 = put_connect_params(conn, %{"date" => Date.to_iso8601(Date.add(date, 3))})
+    assert {:error, {:live_redirect, %{to: to}}} = live(conn2, ~p"/run/daily")
+    assert to == "/run/#{Runs.daily_code(date)}?day=#{date}"
+
+    # The run keeps its date, and the results of a stage have it.
+    code = Runs.daily_code(date)
+    {:ok, view, html} = live(conn, "/run/#{code}?day=#{date}")
+    assert text(html, "#daily") =~ "Daily run of"
+    assert Progress.run_place(player, code).daily == date
+    play_stage(view, player, code, false)
+    assert [%{daily: ^date, stage: 1}] = Progress.stage_results(player)
+  end
+
+  test "a day that does not match the code is not a daily run", %{conn: conn, player: player} do
+    date = Runs.today(nil)
+    {:ok, _view, _html} = live(conn, "/run/#{@seed}?day=#{date}")
+    assert Progress.run_place(player, @seed).daily == (if Runs.daily_code(date) == @seed, do: date)
+  end
+
+  test "an old link with no version opens the run of version 1", %{conn: conn} do
+    assert {:error, {:live_redirect, %{to: "/run/1-8F3K"}}} = live(conn, ~p"/run/8F3K")
+    {:ok, _view, html} = live(conn, ~p"/run/1-8F3K")
+    assert text(html, "#seed") == "1-8F3K"
   end
 
   test "a code that is not a seed goes home", %{conn: conn} do
@@ -211,5 +248,10 @@ defmodule GoWeb.RunLiveTest do
     assert text(html, "#new-run") == "Start a new run"
     assert text(html, "#daily-run") == "Play the daily run"
     assert text(html, "#continue-run") == nil
+
+    date = Runs.today(nil)
+    conn = put_connect_params(conn, %{"date" => Date.to_iso8601(date)})
+    {:ok, _view, html} = live(conn, ~p"/")
+    assert text(html, "#daily-code") == "Today: #{Runs.daily_code(date)}"
   end
 end

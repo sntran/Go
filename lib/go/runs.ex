@@ -52,19 +52,94 @@ defmodule Go.Runs do
   defp encode(n, k, acc),
     do: encode(div(n, length(@alphabet)), k - 1, <<Enum.at(@alphabet, rem(n, length(@alphabet)))>> <> acc)
 
-  @doc "The seed in capital letters, or nil when it is not a seed."
-  def parse(seed) when is_binary(seed) do
-    seed = seed |> String.trim() |> String.upcase()
-    if byte_size(seed) == @length and seed |> to_charlist() |> Enum.all?(&(&1 in @alphabet)), do: seed
+  ## Run codes
+
+  @doc """
+  The code of a run: the version of the library and the seed, for example
+  `2-8F3K`. The link of a run has its code (`/run/2-8F3K`), so a run stays
+  the same when the library has a new version.
+  """
+  def code(version, seed), do: "#{version}-#{seed}"
+
+  @doc "The code of a new run: the newest version of the library, and a new seed."
+  def new_code, do: code(Library.newest(), new_seed())
+
+  @doc "The version and the seed of a run code."
+  def split(code) do
+    [version, seed] = String.split(code, "-")
+    {String.to_integer(version), seed}
   end
 
-  def parse(_seed), do: nil
+  @doc """
+  The run code in its normal form, or nil when it is not a code of a run of
+  this library. A code with no version (an old link, for example `8F3K`)
+  is a run of version 1.
+  """
+  def parse(text) when is_binary(text) do
+    text = text |> String.trim() |> String.upcase()
+
+    {version, seed} =
+      case String.split(text, "-") do
+        [seed] -> {"1", seed}
+        [version, seed] -> {version, seed}
+        _ -> {nil, nil}
+      end
+
+    with true <- is_binary(seed) and seed?(seed),
+         {v, ""} <- Integer.parse(version || ""),
+         true <- Library.version?(v) do
+      code(v, seed)
+    else
+      _ -> nil
+    end
+  end
+
+  def parse(_text), do: nil
+
+  defp seed?(seed),
+    do: byte_size(seed) == @length and seed |> to_charlist() |> Enum.all?(&(&1 in @alphabet))
+
+  ## The daily run
+
+  @doc """
+  The code of the daily run of a date: the seed of the date, and the
+  version of the library for the date (see `Go.Library.daily_version/1`).
+  All players of one date play the same run.
+  """
+  def daily_code(date), do: code(Library.daily_version(date), daily_seed(date))
+
+  @doc """
+  The date of the daily run for a player: the date that the browser sends
+  (the date of its time zone), when it is today somewhere on Earth. Else
+  (no date, or a date that is not today anywhere) the UTC date. Thus a
+  changed time zone cannot open the run of tomorrow early.
+  """
+  def today(text, now \\ DateTime.utc_now()) do
+    with true <- is_binary(text),
+         {:ok, date} <- Date.from_iso8601(text),
+         true <- today_somewhere?(date, now) do
+      date
+    else
+      _ -> DateTime.to_date(now)
+    end
+  end
+
+  @doc """
+  True when the date is today somewhere on Earth: the time zones go from
+  14 hours before UTC (UTC+14) to 12 hours after it (UTC-12).
+  """
+  def today_somewhere?(date, now \\ DateTime.utc_now()) do
+    first = date |> DateTime.new!(~T[00:00:00], "Etc/UTC") |> DateTime.add(-14, :hour)
+    last = date |> Date.add(1) |> DateTime.new!(~T[00:00:00], "Etc/UTC") |> DateTime.add(12, :hour)
+    DateTime.compare(now, first) != :lt and DateTime.compare(now, last) == :lt
+  end
 
   ## The run
 
   @doc """
-  The run of a seed, for a player level. Gives
-  `%{seed: seed, level: level, stages: [stage]}`. A stage:
+  The run of a run code (see `code/2`), for a player level. The stories
+  come from the version of the code. Gives
+  `%{seed: code, level: level, stages: [stage]}`. A stage:
 
     * `number`: 1 to 5.
     * `story`: the story, turned with `sym`.
@@ -77,7 +152,9 @@ defmodule Go.Runs do
     * `puzzles`: the moments that the player plays. The computer plays the
       other moments.
   """
-  def run(seed, level, stories \\ Library.all()) do
+  def run(code, level, stories \\ nil) do
+    {version, seed} = split(code)
+    stories = stories || Library.all(version)
     tiers = tiers(stories)
     rng = rng(seed)
 
@@ -88,7 +165,7 @@ defmodule Go.Runs do
         {stage(k, Library.rotate(story, sym - 1), sym - 1, level), rng}
       end)
 
-    %{seed: seed, level: level, stages: stages}
+    %{seed: code, level: level, stages: stages}
   end
 
   # The random generator of a seed. :erlang.phash2/2 and the exsss

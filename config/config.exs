@@ -8,7 +8,10 @@
 import Config
 
 config :go,
+  ecto_repos: [Go.Repo],
   generators: [timestamp_type: :utc_datetime]
+
+config :ecto_sqlite3, :json_library, JSON
 
 # The time (in milliseconds) between the moves that Red plays, between
 # the moves of "Watch again", and between the moves of a game in a run.

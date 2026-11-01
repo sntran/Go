@@ -55,7 +55,7 @@ defmodule Go.Library.Maker do
 
   alias Go.{Board, Goal, Library, Puzzle, Puzzles, Score, Solver}
   alias Go.Library.Evaluator
-  alias Go.Puzzles.{Check, Grade}
+  alias Go.Puzzles.{Check, Grade, Symmetry}
 
   @size 9
   @opening 8
@@ -69,13 +69,20 @@ defmodule Go.Library.Maker do
   @min_moments 4
   @margin 1..10
   @mistake_min 0.005
-  @opening_min 0.02
+  @opening_min 0.01
+  @opening_choices 6
+  @opening_loss 3
+  @opening_key 10
+  @opening_max 2
+  @recheck_below 8
+  @recheck_visits 200
   @mistakes 10
   @temperature 0.1
   @give_up_at 44
   @cap 9
 
   def opening, do: @opening
+  def opening_max, do: @opening_max
   def min_diff, do: @min_diff
   def min_moments, do: @min_moments
   def margin, do: @margin
@@ -90,18 +97,28 @@ defmodule Go.Library.Maker do
     * `:games`: the number of games in parallel (the default is 8).
     * `:visits`: the visits of the check after the game (the default is 16).
     * `:report`: a function that gets `{seed, result}` for each game.
+    * `:stories`: the stories that the library has already. A game whose
+      first #{@opening_key} moves (with the rotations) are the same as in
+      #{@opening_max} stories stops at move #{@opening_key}, and a game that
+      is the same as a story is dropped.
 
   Gives `%{stories: stories, games: tried, drops: %{reason => count}}`.
   """
   def build(ev, count, opts \\ []) do
     seeds = Keyword.get_lazy(opts, :seeds, fn -> Stream.iterate(opts[:from] || 1, &(&1 + 1)) end)
+    table = :ets.new(:openings, [:public, :set])
+    known = Keyword.get(opts, :stories, [])
+    for s <- known, do: :ets.update_counter(table, opening_key(s.moves), 1, {nil, 0})
+    for s <- known, do: :ets.insert(table, {{:game, game_key(s.moves)}, true})
+    full? = fn key -> match?([{_, n}] when n >= @opening_max, :ets.lookup(table, key)) end
+    opts = Keyword.put(opts, :opening_full?, full?)
     report = Keyword.get(opts, :report, fn _ -> :ok end)
 
     {results, _found} =
       seeds
       |> Task.async_stream(
         fn seed ->
-          result = seed |> game(ev, opts) |> story(ev, opts)
+          result = seed |> game(ev, opts) |> story(ev, opts) |> new_opening(table)
           report.({seed, result})
           {seed, result}
         end,
@@ -125,13 +142,53 @@ defmodule Go.Library.Maker do
     %{stories: Enum.take(stories, count), games: length(results), drops: drops}
   end
 
+  # The last check of the opening, and of the same game (two games that end
+  # at the same time can have the same opening).
+  defp new_opening({:ok, story} = result, table) do
+    key = opening_key(story.moves)
+
+    cond do
+      :ets.member(table, {:game, game_key(story.moves)}) ->
+        {:drop, "the same game as a story"}
+
+      match?([{_, n}] when n >= @opening_max, :ets.lookup(table, key)) ->
+        {:drop, "an opening that #{@opening_max} stories have"}
+
+      true ->
+        :ets.update_counter(table, key, 1, {nil, 0})
+        :ets.insert(table, {{:game, game_key(story.moves)}, true})
+        result
+    end
+  end
+
+  defp new_opening(result, _table), do: result
+
+  @doc """
+  The key of the opening of a game: its first #{@opening_key} moves, the same
+  for all 8 rotations and mirrors of the board.
+  """
+  def opening_key(moves), do: moves |> Enum.take(@opening_key) |> game_key()
+
+  @doc "The key of a game: the same for all 8 rotations and mirrors of the board."
+  def game_key(moves) do
+    Symmetry.all()
+    |> Enum.map(fn sym ->
+      Enum.map(moves, fn
+        {c, :pass} -> {c, :pass}
+        {c, p} -> {c, Symmetry.map_point(sym, @size, p)}
+      end)
+    end)
+    |> Enum.min()
+  end
+
   ## One game
 
   @doc """
   Plays one game. Gives `%{seed, moves, moments, gave_up}`, where each
   moment is `%{index, puzzle, report, diffs, score}` (from the fast
-  estimate). `gave_up` is true when the game stopped early, because it had
-  fewer than 2 moments at move #{@give_up_at}.
+  estimate). `gave_up` is the reason when the game stopped early (nil when
+  it did not): fewer than 2 moments at move #{@give_up_at}, or an opening
+  that #{@opening_max} stories have (see `build/3`).
   """
   def game(seed, ev, opts \\ []) do
     :rand.seed(:exsss, {seed, 211, 223})
@@ -144,12 +201,12 @@ defmodule Go.Library.Maker do
       passes: 0,
       last: -@gap,
       found: [],
-      gave_up: false,
+      gave_up: nil,
       checked: nil,
       last_group: MapSet.new()
     }
 
-    state = loop(state, ev, max)
+    state = loop(state, ev, max, opts)
 
     %{
       seed: seed,
@@ -159,16 +216,26 @@ defmodule Go.Library.Maker do
     }
   end
 
-  defp loop(%{passes: 2} = state, _ev, _max), do: state
-  defp loop(%{moves: moves} = state, _ev, max) when length(moves) >= max, do: state
+  defp loop(%{passes: 2} = state, _ev, _max, _opts), do: state
+  defp loop(%{moves: moves} = state, _ev, max, _opts) when length(moves) >= max, do: state
 
   # A game with fewer than 2 moments at this move rarely gets 4. It stops
   # early, to save time.
-  defp loop(%{moves: moves, found: found} = state, _ev, _max)
+  defp loop(%{moves: moves, found: found} = state, _ev, _max, _opts)
        when length(moves) == @give_up_at and length(found) < 2,
-       do: %{state | gave_up: true}
+       do: %{state | gave_up: "fewer than 2 moments at move #{@give_up_at}"}
 
-  defp loop(state, ev, max) do
+  defp loop(%{moves: moves} = state, ev, max, opts) when length(moves) == @opening_key do
+    full? = Keyword.get(opts, :opening_full?, fn _ -> false end)
+
+    if full?.(opening_key(Enum.reverse(moves))),
+      do: %{state | gave_up: "an opening that #{@opening_max} stories have"},
+      else: play_on(state, ev, max, opts)
+  end
+
+  defp loop(state, ev, max, opts), do: play_on(state, ev, max, opts)
+
+  defp play_on(state, ev, max, opts) do
     n = length(state.moves)
     line = Enum.reverse(state.moves)
     # A moment soon after the last one must be on another group.
@@ -182,7 +249,7 @@ defmodule Go.Library.Maker do
           case open?.(n) && state.board != state.checked &&
                  find_moment(state.board, line, ev, avoid: avoid.(n)) do
             %{} = moment -> moment_move(state, n, moment)
-            _ -> step(state, choose(Evaluator.policy(ev, line), n, state.board, :blue))
+            _ -> step(state, move(ev, line, Evaluator.policy(ev, line), n, state.board, :blue))
           end
 
         :red ->
@@ -193,12 +260,12 @@ defmodule Go.Library.Maker do
               state |> step(move) |> moment_move(n + 1, moment)
 
             no ->
-              state = step(state, choose(policy, n, state.board, :red))
+              state = step(state, move(ev, line, policy, n, state.board, :red))
               if no == nil, do: %{state | checked: top_board(state, line, policy)}, else: state
           end
       end
 
-    loop(state, ev, max)
+    loop(state, ev, max, opts)
   end
 
   defp moment_move(state, n, moment) do
@@ -225,23 +292,59 @@ defmodule Go.Library.Maker do
     }
   end
 
-  # In the opening: by chance from the moves with 2% or more. Later: a top
-  # move, with a little chance (the temperature). Only legal moves.
-  defp choose(policy, n, board, color) do
-    legal =
-      Enum.filter(policy, fn
-        {:pass, _} -> true
-        {p, _} -> match?({:ok, _, _}, Board.play(board, color, p))
-      end)
+  # In the opening: an opening move. Later: a top move, with a little chance
+  # (the temperature).
+  defp move(ev, line, policy, n, board, color) when n < @opening do
+    case opening_moves(ev, line, policy, board, color) do
+      [] -> choose(policy, board, color)
+      moves -> Enum.random(moves)
+    end
+  end
 
-    {temp, list} =
-      if n < @opening do
-        good = Enum.filter(legal, fn {m, p} -> m != :pass and p >= @opening_min end)
-        {1.0, if(good == [], do: legal, else: good)}
-      else
-        {@temperature, legal}
-      end
+  defp move(_ev, _line, policy, _n, board, color), do: choose(policy, board, color)
 
+  @doc """
+  The moves of the opening, for more different games: the #{@opening_choices}
+  best different moves of the policy (moves that a symmetry of the board
+  makes the same count one time), with #{round(@opening_min * 100)}% or more,
+  and not more than #{@opening_loss} points worse than the best of them by
+  the fast estimate. The game takes one of them by chance.
+  """
+  def opening_moves(ev, line, policy, board, color) do
+    syms = Enum.filter(1..7, fn sym -> map_stones(board, sym) == board.stones end)
+
+    candidates =
+      policy
+      |> Enum.filter(fn {m, p} -> m != :pass and p >= @opening_min and legal?(board, color, m) end)
+      |> Enum.sort_by(fn {_m, p} -> -p end)
+      |> Enum.uniq_by(fn {m, _p} -> Enum.min([m | Enum.map(syms, &Symmetry.map_point(&1, @size, m))]) end)
+      |> Enum.take(@opening_choices)
+      |> Enum.map(&elem(&1, 0))
+
+    own =
+      candidates
+      |> Task.async_stream(&Evaluator.score(ev, line ++ [{color, &1}], 1), timeout: :infinity)
+      |> Enum.map(fn {:ok, s} -> if color == :blue, do: s, else: -s end)
+
+    case own do
+      [] ->
+        []
+
+      _ ->
+        best = Enum.max(own)
+        for {m, s} <- Enum.zip(candidates, own), s >= best - @opening_loss, do: m
+    end
+  end
+
+  defp map_stones(board, sym),
+    do: Map.new(board.stones, fn {p, c} -> {Symmetry.map_point(sym, @size, p), c} end)
+
+  defp legal?(board, color, p), do: match?({:ok, _, _}, Board.play(board, color, p))
+
+  # A top move, with a little chance (the temperature). Only legal moves.
+  defp choose(policy, board, color) do
+    list = Enum.filter(policy, fn {m, _} -> m == :pass or legal?(board, color, m) end)
+    temp = @temperature
     weights = Enum.map(list, fn {m, p} -> {m, :math.pow(max(p, 1.0e-9), 1 / temp)} end)
     total = Enum.reduce(weights, 0.0, fn {_, w}, acc -> acc + w end)
     pick(weights, :rand.uniform() * total)
@@ -412,6 +515,8 @@ defmodule Go.Library.Maker do
   """
   def story(game, ev, opts \\ [])
 
+  def story(%{gave_up: reason}, _ev, _opts) when is_binary(reason), do: {:drop, reason}
+
   def story(%{gave_up: true}, _ev, _opts),
     do: {:drop, "fewer than 2 moments at move #{@give_up_at}"}
 
@@ -429,6 +534,7 @@ defmodule Go.Library.Maker do
          estimate = Evaluator.score(ev, before_end(game.moves), visits),
          :ok <- close(estimate, range, "the estimate"),
          moments = confirm(game, ev, visits),
+         moments = recheck(moments, game, ev, opts),
          moments = moments |> distinct() |> limit_capture_in_1(),
          :ok <- enough(moments, game.moments) do
       {:ok, build_story(game, moments, area, estimate, books?)}
@@ -472,6 +578,44 @@ defmodule Go.Library.Maker do
         {_score, diffs} -> [%{m | diffs: diffs}]
       end
     end)
+  end
+
+  # Each difference under #{@recheck_below} points again, with a search of
+  # #{@recheck_visits} visits (the option `:recheck_visits`). A moment with a
+  # difference now under the minimum is dropped.
+  defp recheck(moments, game, ev, opts) do
+    visits = Keyword.get(opts, :recheck_visits, @recheck_visits)
+
+    Enum.flat_map(moments, fn m ->
+      case recheck_diffs(m.diffs, m.puzzle.answer, Enum.take(game.moves, m.index), ev, visits) do
+        nil -> []
+        diffs -> [%{m | diffs: diffs}]
+      end
+    end)
+  end
+
+  @doc """
+  Checks the differences under #{@recheck_below} points again with a search
+  of `visits` visits. Gives the new differences, or nil when one is now
+  under #{@min_diff} points.
+  """
+  def recheck_diffs(diffs, answer, line, ev, visits) do
+    case for({t, d} <- diffs, d < @recheck_below, do: t) do
+      [] ->
+        diffs
+
+      low ->
+        [best | others] =
+          [answer | low]
+          |> Task.async_stream(&Evaluator.score(ev, line ++ [{:blue, &1}], visits),
+            timeout: :infinity
+          )
+          |> Enum.map(fn {:ok, s} -> s end)
+
+        new = Map.new(Enum.zip(low, Enum.map(others, &(best - &1))))
+        diffs = Enum.map(diffs, fn {t, d} -> {t, Map.get(new, t, d)} end)
+        if Enum.all?(diffs, fn {_t, d} -> d >= @min_diff end), do: diffs
+    end
   end
 
   # A moment with the answer of an earlier moment (in a ko fight, for
@@ -531,11 +675,15 @@ defmodule Go.Library.Maker do
 
   @doc """
   The points of a fight: the target group and its roads, the answer, the
-  tempting wrong moves, and the groups next to the target group.
+  tempting wrong moves, the groups next to the target group, and the stones
+  next to a road of the target, next to the answer and next to each
+  tempting wrong move. Nothing that touches the fight is dimmed.
   """
   def fight(board, puzzle, report) do
     group = Board.group(board, puzzle.goal.target)
-    group.stones ++ group.liberties ++ [puzzle.answer | report.traps] ++ next_groups(board, group)
+    moves = [puzzle.answer | report.traps]
+    near = for p <- group.liberties ++ moves, q <- Board.neighbors(board, p), Board.get(board, q), do: q
+    group.stones ++ group.liberties ++ moves ++ next_groups(board, group) ++ near
   end
 
   defp next_groups(board, group) do

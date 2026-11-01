@@ -11,6 +11,9 @@ defmodule Go.Application do
       GoWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:go, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Go.PubSub},
+      Go.Repo,
+      # The migrations run at each start (also in a release).
+      {Ecto.Migrator, repos: [Go.Repo]},
       Go.Progress,
       # Read the puzzle bank and the library one time at the start, so that
       # no action of a player waits for it.

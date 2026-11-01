@@ -9,12 +9,19 @@ defmodule Mix.Tasks.Go.Gen.Library do
       $ mix go.gen.library --katago ~/katago/katago --model ~/katago/kata9x9.bin.gz
       $ mix go.gen.library --count 100   # 100 more stories
 
-  The task adds new stories to the library file. It never plays a seed
-  again: the library file keeps the next seed. During the run, the task
-  saves each game to the parts file at once. When the run stops early, the
-  next run goes on from the parts file. When it has `--count` new stories,
-  it writes the library file (the old stories and the new ones) and the
-  report, and it deletes the parts file.
+  The task makes a new version of the library: the stories of the newest
+  version and the new stories, in a new file `priv/library/stories-N.json`.
+  The old files stay, so that old runs and old links stay the same (see
+  `Go.Library`). The daily runs use the new version from 2 days after
+  the task (so that all players of one date play the same run).
+
+  The task never plays a seed again: the library file keeps the next seed.
+  A new game whose first 10 moves (with the rotations) are the same as in
+  2 stories of the library stops early, and a game that is the same as a
+  story is dropped. During the run, the task saves each game to the parts
+  file at once. When the run stops early, the next run goes on from the
+  parts file. When it has `--count` new stories, it writes the new version
+  and the report, and it deletes the parts file.
 
   Options:
 
@@ -27,8 +34,10 @@ defmodule Mix.Tasks.Go.Gen.Library do
     * `--games`: the number of games in parallel (the default is 8).
     * `--visits`: the visits of the second check (the default is 16).
     * `--parts`: the parts file (the default is `library-parts.jsonl`).
-    * `--output`: the library file (the default is
-      `priv/library/stories.json`).
+    * `--base`: the library file to add to (the default is the newest
+      version in `priv/library`).
+    * `--output`, `--version`: the new library file and its version (the
+      defaults are the next version, `priv/library/stories-N.json`).
     * `--report`: the report (the default is `docs/library-report.md`).
     * `--write-only`: do not play; only write the library and the report
       from the parts file.
@@ -48,6 +57,8 @@ defmodule Mix.Tasks.Go.Gen.Library do
     visits: :integer,
     parts: :string,
     output: :string,
+    base: :string,
+    version: :integer,
     report: :string,
     write_only: :boolean
   ]
@@ -59,13 +70,18 @@ defmodule Mix.Tasks.Go.Gen.Library do
     Mix.Task.run("app.config")
 
     parts = Keyword.get(opts, :parts, "library-parts.jsonl")
-    output = Keyword.get(opts, :output, "priv/library/stories.json")
     report = Keyword.get(opts, :report, "docs/library-report.md")
+    newest = "priv/library" |> Library.list_versions() |> List.last()
 
     base =
-      if File.exists?(output),
-        do: Library.read(output),
-        else: %{stories: [], games: 0, next_seed: 1}
+      cond do
+        opts[:base] -> Library.read(opts[:base])
+        newest -> Library.read("priv/library/stories-#{newest}.json")
+        true -> %{version: 0, stories: [], games: 0, next_seed: 1}
+      end
+
+    version = Keyword.get(opts, :version, base.version + 1)
+    output = Keyword.get(opts, :output, "priv/library/stories-#{version}.json")
 
     unless opts[:write_only], do: play(opts, parts, base)
 
@@ -80,7 +96,13 @@ defmodule Mix.Tasks.Go.Gen.Library do
 
     games = base.games + length(lines)
     next_seed = max(base.next_seed, Enum.max(seeds, fn -> 0 end) + 1)
-    Library.write(stories, output, games: games, next_seed: next_seed)
+    Library.write(stories, output,
+      version: version,
+      daily_from: Date.add(Date.utc_today(), 2),
+      games: games,
+      next_seed: next_seed
+    )
+
     drops = for %{"drop" => reason} <- lines, do: String.replace(reason, ~r/ \(.*\)$/, "")
     write_report(stories, games, Enum.frequencies(drops), report, output)
     File.rm(parts)
@@ -94,6 +116,7 @@ defmodule Mix.Tasks.Go.Gen.Library do
   defp play(opts, parts, base) do
     lines = read_lines(parts)
     done = Enum.count(lines, &Map.has_key?(&1, "story"))
+    known = base.stories ++ for(%{"story" => s} <- lines, do: Library.decode(s))
     next = max(base.next_seed, Enum.max(Enum.map(lines, & &1["seed"]), fn -> 0 end) + 1)
     count = Keyword.get(opts, :count, 300) - done
 
@@ -118,6 +141,7 @@ defmodule Mix.Tasks.Go.Gen.Library do
       from: next,
       games: Keyword.get(opts, :games, 8),
       visits: Keyword.get(opts, :visits, 16),
+      stories: known,
       report: fn {seed, result} ->
         line =
           case result do

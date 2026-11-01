@@ -1,5 +1,12 @@
 import Config
 
+# The progress of the players, in a SQLite file.
+File.mkdir_p!(Path.expand("../tmp", __DIR__))
+
+config :go, Go.Repo,
+  database: Path.expand("../tmp/go_dev.db", __DIR__),
+  pool_size: 1
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #

@@ -33,7 +33,7 @@ defmodule Go.SpeedTest do
   # The puzzles of the bank, and the puzzles of a run at the highest level
   # (the stage in the name: a story can come back in another stage).
   run_puzzles =
-    for st <- Runs.run("8F3K", 3).stages, m <- st.puzzles do
+    for st <- Runs.run(Runs.code(Go.Library.newest(), "8F3K"), 3).stages, m <- st.puzzles do
       {"stage #{st.number}, ", Runs.puzzle(st, m)}
     end
 

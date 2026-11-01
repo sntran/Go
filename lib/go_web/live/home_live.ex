@@ -33,10 +33,13 @@ defmodule GoWeb.HomeLive do
        worlds: worlds,
        run: run_place(player),
        runs?: Go.Library.all() != [],
-       daily: Go.Runs.daily_seed(),
+       # The daily run of the date of the player (from the browser).
+       daily: if(connected?(socket), do: Go.Runs.daily_code(daily_date(socket))),
        page_title: "Tower Go"
      )}
   end
+
+  defp daily_date(socket), do: Go.Runs.today(get_connect_params(socket)["date"])
 
   # The run that the player plays now, for the main button, or nil.
   defp run_place(player) do
@@ -69,7 +72,7 @@ defmodule GoWeb.HomeLive do
               Start a new run
             </.link>
             <.link navigate={~p"/run/daily"} class="pill" id="daily-run">Play the daily run</.link>
-            <span class="story-where">Today: {@daily}</span>
+            <span :if={@daily} class="story-where" id="daily-code">Today: {@daily}</span>
           </div>
         </section>
         <section class="intro">

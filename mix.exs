@@ -45,6 +45,12 @@ defmodule Go.MixProject do
     [
       {:phoenix, "~> 1.8.16"},
       {:phoenix_html, "~> 4.1"},
+      # The progress of the players, in SQLite (on Cloudflare: the SQLite
+      # storage of the Durable Object). exqlite must be the version of the
+      # NIF in beam.com.
+      {:ecto_sql, "~> 3.13"},
+      {:ecto_sqlite3, "~> 0.25.0"},
+      {:exqlite, "0.41.0"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 1.2.0"},
       {:lazy_html, ">= 0.1.0", only: :test},

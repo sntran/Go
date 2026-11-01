@@ -4,7 +4,17 @@ defmodule Go.Library do
   played, with its moments: the positions before a key move of Blue that
   are capture or escape puzzles. The mix task `mix go.gen.library` makes
   the library offline (see `Go.Library.Maker`). The server only reads the
-  file `priv/library/stories.json`. No neural network runs on the server.
+  files `priv/library/stories-N.json`. No neural network runs on the server.
+
+  ## Versions
+
+  Each file is one version of the library (N = 1, 2, …). A change of the
+  library (one story more or less) changes almost all runs, so a change is
+  always a new version, and the old files stay. A run keeps the version of
+  its start (see `Go.Runs`), so an old link still opens the same run. A new
+  run uses the newest version. The daily run of a date uses the newest
+  version whose `daily_from` date is not after it, so that all players of
+  one date play the same run.
 
   The file is compact: each move is one byte (`row * 9 + column`, and 81 for
   a pass), in Base64. Blue plays first, and the colors take turns. The
@@ -39,18 +49,19 @@ defmodule Go.Library do
   alias Go.Puzzles.{Generator, Grade, Symmetry}
 
   @key {__MODULE__, :stories}
+  @dir "priv/library"
   @size 9
   @pass 81
   @red_bit 128
 
   ## Reading
 
-  @doc "All stories, in the order of the file."
-  def all do
-    case :persistent_term.get(@key, nil) do
+  @doc "All stories of a version (the newest by default), in the order of the file."
+  def all(version \\ newest()) do
+    case :persistent_term.get({@key, version}, nil) do
       nil ->
-        stories = if File.exists?(path()), do: load(path()), else: []
-        :persistent_term.put(@key, stories)
+        stories = if version, do: load(path(version)), else: []
+        :persistent_term.put({@key, version}, stories)
         stories
 
       stories ->
@@ -58,32 +69,100 @@ defmodule Go.Library do
     end
   end
 
-  @doc "The story with this id, or nil."
-  def get(id), do: Enum.find(all(), &(&1.id == id))
+  @doc "The story with this id in a version (the newest by default), or nil."
+  def get(id, version \\ newest()), do: Enum.find(all(version), &(&1.id == id))
 
-  @doc "The path of the library file."
-  def path, do: Application.app_dir(:go, "priv/library/stories.json")
+  @doc "The versions of the library, from the oldest."
+  def versions do
+    case :persistent_term.get({@key, :versions}, nil) do
+      nil ->
+        versions = list_versions(Application.app_dir(:go, @dir))
+        :persistent_term.put({@key, :versions}, versions)
+        versions
+
+      versions ->
+        versions
+    end
+  end
+
+  @doc "The versions of the library files in a directory, from the oldest."
+  def list_versions(dir) do
+    for name <- File.ls!(dir),
+        [_, n] <- [Regex.run(~r/^stories-(\d+)\.json$/, name)],
+        do: String.to_integer(n)
+  rescue
+    File.Error -> []
+  else
+    list -> Enum.sort(list)
+  end
+
+  @doc "The newest version, or nil when there is no library."
+  def newest, do: List.last(versions())
+
+  @doc "True when the version exists."
+  def version?(version), do: version in versions()
+
+  @doc "The path of the file of a version."
+  def path(version), do: Application.app_dir(:go, Path.join(@dir, "stories-#{version}.json"))
+
+  @doc """
+  The version of the daily run of a date: the newest version whose
+  `daily_from` date is not after the date (the oldest version when none).
+  """
+  def daily_version(date) do
+    versions()
+    |> Enum.filter(&(Date.compare(daily_from(&1), date) != :gt))
+    |> List.last()
+    |> Kernel.||(List.first(versions()))
+  end
+
+  defp daily_from(version) do
+    case :persistent_term.get({@key, :daily_from, version}, nil) do
+      nil ->
+        from = read_head(path(version))[:daily_from]
+        :persistent_term.put({@key, :daily_from, version}, from)
+        from
+
+      from ->
+        from
+    end
+  end
+
+  # The head of a file, without the stories.
+  defp read_head(path) do
+    data = path |> File.read!() |> JSON.decode!()
+    %{daily_from: daily_date(data["daily_from"])}
+  end
+
+  defp daily_date(nil), do: ~D[2000-01-01]
+  defp daily_date(text), do: Date.from_iso8601!(text)
 
   @doc "Reads a library file."
   def load(path), do: path |> read() |> Map.fetch!(:stories)
 
   @doc """
-  Reads a library file with its counts: `%{stories, games, next_seed}`.
-  `games` is the number of games that the maker played, and `next_seed`
-  the first seed that it did not play.
+  Reads a library file with its counts: `%{version, daily_from, stories,
+  games, next_seed}`. `games` is the number of games that the maker played,
+  and `next_seed` the first seed that it did not play.
   """
   def read(path) do
     data = path |> File.read!() |> JSON.decode!()
 
     %{
+      version: data["version"] || 1,
+      daily_from: daily_date(data["daily_from"]),
       stories: Enum.map(data["stories"], &decode/1),
       games: data["games"] || 0,
       next_seed: data["next_seed"] || 1
     }
   end
 
-  @doc "Removes the library from memory, so that the next call reads the file again."
-  def reload, do: :persistent_term.erase(@key)
+  @doc "Removes the library from memory, so that the next call reads the files again."
+  def reload do
+    for {{@key, _} = key, _} <- :persistent_term.get(), do: :persistent_term.erase(key)
+    for {{@key, _, _} = key, _} <- :persistent_term.get(), do: :persistent_term.erase(key)
+    :ok
+  end
 
   @doc "The board after the first `n` moves of a story."
   @spec board_at(map(), non_neg_integer()) :: Board.t()
@@ -207,13 +286,16 @@ defmodule Go.Library do
   ## The file
 
   @doc """
-  Writes the library file, with one story on each line. The options
-  `games` and `next_seed` are as in `read/1`.
+  Writes a library file, with one story on each line. The options
+  `version`, `daily_from`, `games` and `next_seed` are as in `read/1`.
   """
   def write(stories, path, opts \\ []) do
+    from = Keyword.get(opts, :daily_from, ~D[2000-01-01])
+
     body = """
     {
-      "version": 1,
+      "version": #{Keyword.get(opts, :version, 1)},
+      "daily_from": "#{Date.to_iso8601(from)}",
       "games": #{Keyword.get(opts, :games, 0)},
       "next_seed": #{Keyword.get(opts, :next_seed, 1)},
       "stories": [

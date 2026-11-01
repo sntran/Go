@@ -26,9 +26,14 @@ import {hooks as colocatedHooks} from "phoenix-colocated/go"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+// The date of the player, in the time zone of the browser: the daily run
+// of the day (the server accepts only a date that is today somewhere).
+const pad = n => String(n).padStart(2, "0")
+const now = new Date()
+const localDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken},
+  params: {_csrf_token: csrfToken, date: localDate},
   hooks: {...colocatedHooks},
 })
 

@@ -95,7 +95,7 @@ defmodule GoWeb.RedTurnTest do
   test "the first moves of a run play on the board, and Skip goes to the first puzzle", %{
     conn: conn
   } do
-    {:ok, view, html} = live(conn, ~p"/run/8F3K")
+    {:ok, view, html} = live(conn, ~p"/run/#{Go.Runs.new_code()}")
     assert text(html, "#title") == "Stage 1 of 5"
     assert text(html, "#message") == "Watch the game…"
     html = click(view, "skip")

@@ -40,6 +40,12 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
+  # The progress of the players. beam.com gives DATABASE_PATH on Cloudflare
+  # Workers (the SQLite storage of the Durable Object).
+  config :go, Go.Repo,
+    database: System.get_env("DATABASE_PATH") || "go.db",
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1")
+
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
   # want to use a different value for prod and you most likely don't want

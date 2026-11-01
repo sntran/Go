@@ -1,5 +1,13 @@
 import Config
 
+# The progress of the players, in a SQLite file. Each test uses new
+# players, so the tests do not need a clean database.
+File.mkdir_p!(Path.expand("../tmp", __DIR__))
+
+config :go, Go.Repo,
+  database: Path.expand("../tmp/go_test.db", __DIR__),
+  pool_size: 1
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :go, GoWeb.Endpoint,
