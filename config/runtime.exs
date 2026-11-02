@@ -39,6 +39,23 @@ if config_env() == :dev do
     ]
 end
 
+# The guard of the memory of the VM (see Go.Capacity): above this limit
+# (MB), a new player gets the page "Too many players are here now". On
+# Cloudflare, the isolate has 128 MB for the VM and app.com (about 12 MB).
+# The value comes from the load test (docs/load-test.md). Set
+# MEMORY_LIMIT_MB to change it, or to "off". The guard is on only in prod.
+memory_limit_mb =
+  case System.get_env("MEMORY_LIMIT_MB") do
+    nil -> if config_env() == :prod, do: 100
+    "off" -> nil
+    mb -> String.to_integer(mb)
+  end
+
+config :go, :memory_limit_mb, memory_limit_mb
+
+# GET /stats/memory gives the memory of the VM (for the load test).
+config :go, :memory_stats, System.get_env("MEMORY_STATS") in ["1", "true"]
+
 if config_env() == :prod do
   # The progress of the players. beam.com gives DATABASE_PATH on Cloudflare
   # Workers (the SQLite storage of the Durable Object).

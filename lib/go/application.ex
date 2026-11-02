@@ -22,6 +22,8 @@ defmodule Go.Application do
       # The migrations run at each start (also in a release).
       {Ecto.Migrator, repos: [Go.Repo]},
       Go.Progress,
+      # The guard of the memory of the VM (the players who are here).
+      Go.Capacity,
       # Read the puzzle bank and the library one time at the start, so that
       # no action of a player waits for it.
       # It also stores the time when the server first sees each version of

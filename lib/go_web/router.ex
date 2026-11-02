@@ -9,6 +9,8 @@ defmodule GoWeb.Router do
     plug :protect_from_forgery
     plug :put_secure_browser_headers
     plug GoWeb.Player
+    # A new player gets "Too many players" when the VM is full.
+    plug GoWeb.Capacity
   end
 
   pipeline :api do
@@ -18,7 +20,9 @@ defmodule GoWeb.Router do
   scope "/", GoWeb do
     pipe_through :browser
 
-    live_session :default, session: {GoWeb.Player, :session, []} do
+    live_session :default,
+      session: {GoWeb.Player, :session, []},
+      on_mount: GoWeb.Capacity do
       live "/", HomeLive
       live "/play/:world", PuzzleLive
       live "/worlds/:world", WorldLive
@@ -29,10 +33,11 @@ defmodule GoWeb.Router do
     post "/move", MoveController, :create
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", GoWeb do
-  #   pipe_through :api
-  # end
+  # The memory of the VM, for the load test (only with MEMORY_STATS=1).
+  scope "/stats", GoWeb do
+    pipe_through :api
+    get "/memory", StatsController, :memory
+  end
 
   # Enable LiveDashboard in development
   if Application.compile_env(:go, :dev_routes) do

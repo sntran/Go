@@ -35,7 +35,9 @@ const now = new Date()
 const localDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken, date: localDate},
+  // _here: the path of the page. When the server is full, it sends the
+  // page again, and the page then says "Too many players" (GoWeb.Capacity).
+  params: () => ({_csrf_token: csrfToken, date: localDate, _here: location.pathname + location.search}),
   hooks: {...colocatedHooks, Anim, Busy},
 })
 
