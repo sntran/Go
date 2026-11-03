@@ -1,44 +1,123 @@
 # The load test: how many players one Durable Object serves
 
 All players use one Durable Object, and one VM (BEAM in WebAssembly) in
-it. This test measures how many players it serves. The real limit is the
-memory: an isolate of a Worker has 128 MB, for the VM and for the modules
-of the Worker (`app.com`). `wrangler dev` does not apply this limit, so
-the test applies it.
+it. This test measures how many players it serves. The limit is the
+memory: the VM memory never shrinks, and when the isolate goes over its
+limit, the object resets and all players lose their connection. An
+isolate has 128 MB, for the VM and for the modules of the Worker
+(`app.com`). `wrangler dev` does not apply this limit, so the test
+applies it there. On Cloudflare, the reset came later (see below).
+
+The newest results use beam.com built from `main` of BEAM.com (commit
+6672c01, with the fix of #145). No release has this fix yet.
+`docs/beam-memory.md` has all the tables, and the decision of the flags.
 
 ## How I measured
 
 - `wrangler dev` (workerd on my computer: 4 cores of an Intel Xeon at 2.1
-  GHz) with the `app.com` and the `wrangler.jsonc` of this commit. The
-  Durable Object runs on one thread.
+  GHz), and the Worker `go-staging` on Cloudflare. Both have the
+  `app.com` and the `wrangler.jsonc` of this commit (11.8 MiB, `--target
+  wasm32`). The Durable Object runs on one thread.
 - `scripts/load/run.mjs` starts N players at the same time. Each player
   opens a run over the WebSocket of LiveView, as a browser does, and taps
   a move every 3 to 10 seconds: the moves of the shown answer (60%), or
   a wrong move (40%). Then it taps "Continue the story", "Skip" and "Next
-  stage". The data (the answers of the runs) comes from
+  stage". At the end of a run, the player starts the next run (as a new
+  player id). The data (the answers of the runs) comes from
   `scripts/load/data.exs`: only this test tool knows them, never the
   browser.
 - `scripts/load/series.mjs` runs a list of N. For each N, it starts a new
-  `wrangler dev` (a clean state), runs the players for 90 s, and reads
-  the peak memory of the VM from the log lines of beam.com (`beam: memory
-  N MB`, in steps of 8 MB). The memory of the isolate is this peak plus
-  the size of `app.com`. **A step fails when the isolate is over 128 MB**,
-  and the tool reports the largest N under the limit.
+  VM, runs the players for 90 s, and waits 30 s after they leave. Each 5
+  s, it reads `GET /stats/memory` (only with `MEMORY_STATS=1`):
+  `wasm_host:memory/0` (the memory of the VM) and `erlang:memory(total)`
+  (only with the allocators of ERTS). It also reads the log lines of
+  beam.com (`beam: memory N MB`). `--flags` sets `BEAM_ERL_FLAGS`
+  (`default` for none).
+- With `wrangler dev`, a step fails when the VM peak plus the size of
+  `app.com` is over 128 MB.
+- On Cloudflare (`--url` and `--deploy`), a step fails when the object
+  resets (a new VM: the memory goes down) or a socket closes. A deploy
+  does not restart an object that runs, so the tool deploys, sends no
+  request for 150 s (Cloudflare then evicts the object), and checks that
+  the VM is new.
 - The time from the tap to the blue stone is the time to the reply of the
   tap. The time to Red's reply is the time to the next push of the
-  server; Red waits 700 ms on purpose (`:red_delay`), so the table gives
+  server; Red waits 700 ms on purpose (`:red_delay`), so the tables give
   this time less the 700 ms.
 
 ```sh
 npm run build
 OUT=/tmp/load-data.json mix run scripts/load/data.exs
-node scripts/load/series.mjs --players 1,3,5,10,20 --seconds 90 --data /tmp/load-data.json --all
+# wrangler dev:
+node scripts/load/series.mjs --players 1,3,5,7,10,15,20 --seconds 90 \
+  --data /tmp/load-data.json --flags "-Mea min" --all --samples samples.jsonl
+# Cloudflare: a folder "staging" with the same files, and the name
+# go-staging in its wrangler.jsonc:
+node scripts/load/series.mjs --url https://go-staging.fifo.workers.dev \
+  --deploy "cd staging && npx wrangler deploy --var MEMORY_STATS:1 --var MEMORY_LIMIT_MB:off" \
+  --players 1,3,5,7,10,15,20 --seconds 90 --data /tmp/load-data.json --all
 ```
 
-## Results
+## Results (beam.com of `main`, 6672c01)
 
-With `app.com` for WebAssembly only (11.7 MiB) and `BEAM_ERL_FLAGS` =
-`-Mea min` (see below):
+The VM peak in MB. "Reset" is a reset of the object on Cloudflare:
+
+| Players | `wrangler dev`, default flags | `wrangler dev`, `-Mea min` | Cloudflare, default flags | Cloudflare, `-Mea min` |
+|---:|---:|---:|---|---|
+| 1 | 82.8 | 54.4 | 71.6 | 47.6 |
+| 3 | 105.8 | 73.4 | 93.3 | 67.4 |
+| 5 | **128.8** | 86.2 | 114.1 | 80.4 |
+| 7 | **155.1** | 108.4 | 132.6, 142.8 | 89.7, 90.4 (2 sockets closed, no reset) |
+| 10 | **165.3** | **134.1** | 167.1, **reset** | 122.7, 126.8, 123.5 |
+| 12 | | | | 143.1 |
+| 15 | **230.6** | **190.4** | **reset**, **reset** | **reset**, **reset** |
+| 20 | **264.3** | **219.9** | **reset** | **reset**, **reset** |
+| 1, for 10 minutes | 91.3 | 65.1 | 76.8 | 55.4 |
+| At the start | 55.3 | 39.9 | 55.3 | 36.6 |
+
+In bold: over 128 MB with `app.com` (`wrangler dev`), or a reset.
+
+**On Cloudflare, one Durable Object serves 10 players who start at the
+same time with no reset, with `-Mea min`** (3 of 3 runs; 12 passed in
+its one run). With the default flags, 7 (10 reset in 1 of 2 runs). The
+p95 of a tap (to the blue stone) on Cloudflare was 141 to 145 ms with 10
+players, 141 to 152 ms in all 90 s runs with no reset, and 130 ms
+(default flags) and 200 ms (`-Mea min`) for the 10-minute player. This
+includes the network from my computer (about 100 ms). On `wrangler dev`, it was 17 to
+38 ms.
+
+The VM memory after the players left was the same as the peak (it never
+shrinks). `erlang:memory(total)` went back to about 32 MB (`wrangler
+dev`) and 28 MB (Cloudflare).
+
+The app uses `-Mea min` (`wrangler.jsonc`). The reason is in
+`docs/beam-memory.md`.
+
+## The guard: "Too many players are here now"
+
+When the VM is above a limit, the server refuses a new player
+(`Go.Capacity`, `GoWeb.Capacity`): the page says "Too many players are
+here now. Try again in one minute.", with a button to try again (status
+503, `retry-after: 60`). A player who had an action in the last 10
+minutes is "here", and continues to play. The server checks the page
+request and the connect of the live view. The memory comes from
+`wasm_host:memory/0`.
+
+The limit is `MEMORY_LIMIT_MB` (`config/runtime.exs`): 100 MB by default
+in prod. On Cloudflare, the object reset above about 135 to 170 MB, and
+each player who starts at the same time adds about 9 MB. At 100 MB,
+about 7 to 8 players are in, and there is space for about 4 more who
+come in the same seconds. Players who come one after the other need
+less. Test: `test/go_web/capacity_test.exs` (with a limit of 1 MB).
+
+The production Worker `go` still has rc.6 (the npm package of
+`package.json`), which has no `wasm_host:memory/0`, so there the guard
+is off until a release of beam.com has the fix.
+
+## The results with rc.6
+
+The same series with beam.com 0.1.0-rc.6 (before #145), on `wrangler
+dev`, with `-Mea min`:
 
 | Players | Taps | Tap → blue stone, p95 | Red's reply less 700 ms, p95 | Join, p95 | VM peak | Isolate (VM + app.com) | 128 MB | Errors |
 |---:|---:|---:|---:|---:|---:|---:|---|---|
@@ -48,13 +127,8 @@ With `app.com` for WebAssembly only (11.7 MiB) and `BEAM_ERL_FLAGS` =
 | 10 | 54 | 18 ms | 25 ms | 0.43 s | 163 MB | 175 MB | **fail** | none |
 | 20 | 107 | 17 ms | 28 ms | 0.95 s | 275 MB | 287 MB | **fail** | none |
 
-**The largest N under the limit: 5 players who start at the same time.**
-The margin at 5 is small (123 of 128 MB). Players who come one after the
-other need less: 10 run pages, opened one after the other, took the VM
-to 57 MB.
-
-The same series before the changes of this round (`app.com` of 36 MiB,
-the allocators of ERTS):
+And before the changes of the round before (`app.com` of 36 MiB, the
+allocators of ERTS):
 
 | Players | VM peak | Isolate | 128 MB |
 |---:|---:|---:|---|
@@ -65,11 +139,10 @@ the allocators of ERTS):
 | 20 | 329 MB | 365 MB | fail |
 | 50 | 653 MB | 689 MB | fail |
 
-So before, not even one player stayed under the limit for 90 s.
-
 The CPU is not the limit: with 20 players, the taps and Red's replies
-stay under 30 ms at the 95th percentile, and the earlier test (below)
-reached the limit of one thread at about 200 players.
+stay under 40 ms at the 95th percentile on `wrangler dev`, and the
+earlier test (below) reached the limit of one thread at about 200
+players.
 
 ## The missed Red replies
 
@@ -106,7 +179,7 @@ Measured with `wrangler dev`, from the log lines of beam.com:
 | `app.com` | 36 MiB | 11.7 MiB |
 | The isolate after the start | about 115 MB | about 52 MB |
 
-## What changed in this round
+## What changed in the round before
 
 1. **The data in the Erlang term format.** The library and the bank are
    `term_to_binary` files, not JSON. The moves of a story are packed (one
@@ -177,11 +250,14 @@ measured the time of a tap. The memory columns are old.
 By the time of a tap, one Durable Object serves about 150 players. By the
 memory, it serves 5 who start together.
 
-## On Cloudflare (go-staging)
+## On Cloudflare with rc.6 (go-staging)
 
 A separate Worker, `go-staging` (the same `app.com` and `wrangler.jsonc`,
-with another name), on the account of the project. Before each step, a
-new deploy gave a new VM. `scripts/load/run.mjs` ran from a computer in
+with another name), on the account of the project, with rc.6. Caution:
+I thought that a new deploy before each step gave a new VM. Later I saw
+that a deploy does not restart an object that runs, so some of these
+steps started with the memory of the step before, and some resets came
+from it. The results with `main` above have a new VM for each step. `scripts/load/run.mjs` ran from a computer in
 the US, with `--url https://go-staging.fifo.workers.dev`, for 90 s:
 
 | Players | Runs | Result | Tap → blue stone, p95 | Red's reply less 700 ms, p95 | Join, p95 |
@@ -211,8 +287,6 @@ A browser reconnects after a reset, and the run goes on at the saved
 place (the place is in SQLite), but the player sees the page reload.
 The load tool does not reconnect.
 
-`go-staging` is still deployed. Delete it with `npx wrangler delete
---name go-staging` when you do not need it.
 
 ## Not done
 

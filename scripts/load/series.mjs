@@ -67,10 +67,21 @@ async function startLocal() {
   return { proc, log };
 }
 
-// A new deploy on Cloudflare: a new version, so a new Durable Object VM.
+// A new VM on Cloudflare. A deploy alone does not restart a Durable Object
+// that is running (November 2026): it keeps its VM until Cloudflare evicts
+// it, after some time with no requests. So the tool deploys, sends no
+// request for --idle seconds (150), and then checks that the VM is new:
+// its memory must be under --fresh MB (65). Else it waits again.
 async function startRemote() {
   if (args.deploy) execSync(args.deploy, { stdio: ['ignore', 'ignore', 'inherit'] });
-  await sleep(5000);
+  const idle = Number(args.idle || 150);
+  const fresh = Number(args.fresh || 65);
+  for (let i = 0; i < 6; i++) {
+    await sleep(idle * 1000);
+    const s = await sample(Date.now(), 'check');
+    if (s.vm_mb != null && s.vm_mb <= fresh) break;
+    console.error(`series: the VM is not new (${s.vm_mb} MB); wait again`);
+  }
   await ready();
   return { proc: null, log: { text: '' } };
 }
@@ -164,9 +175,11 @@ for (const n of counts) {
   const peak = max([...vm, ...(fromLog == null ? [] : [fromLog])]);
   const last = samples[samples.length - 1];
   const isolate = peak === null ? null : Math.round(peak + appMb);
-  // A reset closes the WebSockets, or a sample fails.
-  const reset = Boolean(result.errors?.closed) || samples.some((s) => s.error);
-  const pass = remote ? !reset && !result.errors?.['no result'] : isolate !== null && isolate <= limit;
+  // A reset gives a new VM. The memory of a VM never shrinks, so a sample
+  // under an earlier one is a new VM. A sample that fails is also a reset.
+  const reset = samples.some((s, i) => s.error || (i > 0 && s.vm_mb != null && samples.slice(0, i).some((e) => e.vm_mb != null && s.vm_mb < e.vm_mb - 1)));
+  const closed = Object.entries(result.errors || {}).filter(([k]) => k.startsWith('closed')).reduce((n, [, v]) => n + v, 0);
+  const pass = remote ? !reset && closed === 0 && !result.errors?.['no result'] : isolate !== null && isolate <= limit;
   const crashed = (log.text.match(/\[error\]/g) || []).length;
   console.log(JSON.stringify({
     ...result,
@@ -177,6 +190,7 @@ for (const n of counts) {
     isolate_mb: isolate,
     limit_mb: limit,
     reset,
+    closed_sockets: closed,
     pass,
     server_errors: crashed,
   }));

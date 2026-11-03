@@ -188,25 +188,32 @@ The plan is in [`docs/plans/story-runs.md`](docs/plans/story-runs.md).
 
 ## How many players one Durable Object serves
 
-The details are in [`docs/load-test.md`](docs/load-test.md). The real
-limit is the memory: an isolate on Cloudflare has 128 MB for the VM and
-`app.com`, and `wrangler dev` does not apply it. `scripts/load/series.mjs`
-starts N players at the same time on a new `wrangler dev` for each N,
-and a step fails when the VM peak plus `app.com` is over 128 MB:
+The details are in [`docs/load-test.md`](docs/load-test.md) and
+[`docs/beam-memory.md`](docs/beam-memory.md). The real limit is the
+memory: the memory of the VM never shrinks, and when the isolate goes
+over its limit, the Durable Object resets. `scripts/load/series.mjs`
+starts N players at the same time on a new VM for each N, on `wrangler
+dev` or on Cloudflare, and reads the memory of the VM
+(`wasm_host:memory/0`) each 5 s. With beam.com built from `main` of
+BEAM.com (with the fix of #145) and `-Mea min`:
 
-| Players | Tap → blue stone, p95 | Red's reply less its 700 ms pause, p95 | VM peak | Isolate | 128 MB |
-|---:|---:|---:|---:|---:|---|
-| 1 | 24 ms | 34 ms | 57 MB | 69 MB | pass |
-| 3 | 18 ms | 28 ms | 90 MB | 102 MB | pass |
-| 5 | 17 ms | 21 ms | 111 MB | 123 MB | pass |
-| 10 | 18 ms | 25 ms | 163 MB | 175 MB | fail |
-| 20 | 17 ms | 28 ms | 275 MB | 287 MB | fail |
+| Players | VM peak, `wrangler dev` | VM peak, Cloudflare | Cloudflare | Tap → blue stone, p95 (Cloudflare) |
+|---:|---:|---:|---|---:|
+| 1 | 54 MB | 48 MB | pass | 144 ms |
+| 5 | 86 MB | 80 MB | pass | 148 ms |
+| 10 | 134 MB | 123 to 127 MB | pass, pass, pass | 141 to 145 ms |
+| 15 | 190 MB | reset after 167 MB | reset, reset | |
+| 20 | 220 MB | reset after 160 MB | reset, reset | |
 
-- By the memory, one Durable Object serves 5 players who start at the
-  same time (before this round: not even 1). Players who come one after
-  the other need less. On Cloudflare itself (a separate Worker,
-  `go-staging`), 5 players passed in 2 runs of 2; 7 players reset the
-  Durable Object one time, and 10 players in 2 runs of 4.
+- On Cloudflare, one Durable Object serves 10 players who start at the
+  same time with no reset (with the default flags of the VM: 7). The tap
+  times include about 100 ms of network. Players who come one after the
+  other need less.
+- Above 100 MB of VM memory (`MEMORY_LIMIT_MB`), a new player gets the
+  page "Too many players are here now. Try again in one minute." A player
+  who is already here continues to play (`Go.Capacity`).
+- The production Worker still runs beam.com 0.1.0-rc.6, because no
+  release has the fix yet. There, the guard is off.
 - By the time of a tap, it serves about 150 players (an earlier test).
 - The memory of the VM never shrinks, and in WebAssembly it grows far
   above the memory that Erlang uses. `docs/beam-memory.md` is a report
@@ -632,6 +639,12 @@ each start. The SQLite of Workers takes only text and numbers, so
 
 I checked this with `wrangler dev`: a run in progress went on at the same
 puzzle after a restart of the Worker.
+
+Two variables of the Worker change the memory guard (`config/runtime.exs`):
+`MEMORY_LIMIT_MB` (100 by default, or `off`) and `MEMORY_STATS=1` (the
+route `/stats/memory` for the load test; off by default). The guard needs
+`wasm_host:memory/0`, which only beam.com after BEAM.com #145 has. When a
+release of beam.com has it, set its version in `package.json`.
 
 ### Deploy at each push (Workers Builds)
 

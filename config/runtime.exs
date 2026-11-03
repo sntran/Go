@@ -41,8 +41,10 @@ end
 
 # The guard of the memory of the VM (see Go.Capacity): above this limit
 # (MB), a new player gets the page "Too many players are here now". On
-# Cloudflare, the isolate has 128 MB for the VM and app.com (about 12 MB).
-# The value comes from the load test (docs/load-test.md). Set
+# Cloudflare, the Durable Object reset when the VM went above about 135
+# to 170 MB, and each player who starts at the same time adds about 9 MB
+# (with -Mea min). At 100 MB, about 7 players are in, and there is space
+# for about 4 more who come in the same seconds (docs/load-test.md). Set
 # MEMORY_LIMIT_MB to change it, or to "off". The guard is on only in prod.
 memory_limit_mb =
   case System.get_env("MEMORY_LIMIT_MB") do

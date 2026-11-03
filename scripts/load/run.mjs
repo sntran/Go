@@ -49,6 +49,9 @@ class Player {
 
   async open() {
     const t0 = Date.now();
+    // No cookie: each run has a new player id. A finished run can change
+    // the level of a player, and then the run has other puzzles than the
+    // data of this tool.
     const res = await fetch(`${url}/run/${this.run.code}`, { redirect: 'manual' });
     const html = await res.text();
     const cookie = (res.headers.get('set-cookie') || '').split(';')[0];
@@ -62,7 +65,9 @@ class Player {
     this.ws = new WebSocket(wsUrl, { headers: { cookie } });
     this.ws.on('message', (raw) => this.message(JSON.parse(raw)));
     this.ws.on('error', () => error('websocket'));
-    this.ws.on('close', () => { if (!stop) error('closed'); });
+    const ws = this.ws;
+    // The close code tells who closed the socket (1006: no close frame).
+    this.ws.on('close', (code) => { if (!stop && !ws.done) error(`closed ${code}`); });
     await new Promise((ok, fail) => { this.ws.once('open', ok); this.ws.once('error', fail); });
     this.heartbeat = setInterval(() => this.ws.send(JSON.stringify([null, String(++this.ref), 'phoenix', 'heartbeat', {}])), 30000);
     const reply = await this.push('phx_join', {
@@ -148,6 +153,7 @@ class Player {
 
   close() {
     clearInterval(this.heartbeat);
+    if (this.ws) this.ws.done = true;
     this.ws?.close();
   }
 }
@@ -159,6 +165,7 @@ const pct = (list, p) => {
 };
 
 const all = Array.from({ length: players }, (_, i) => new Player(data[i % data.length]));
+all.forEach((p, i) => (p.index = i));
 const before = sample();
 let peakRss = before?.rss || 0;
 let peakCpu = 0;
@@ -175,8 +182,17 @@ const start = Date.now();
 await Promise.all(
   all.map(async (p) => {
     try {
-      await p.open();
-      await p.play();
+      // A player who ends a run starts the next run (as a new player id),
+      // until the time ends.
+      for (let k = 1; !stop; k++) {
+        await p.open();
+        await p.play();
+        if (stop) break;
+        p.close();
+        p.run = data[(p.index + k * players) % data.length];
+        p.waiting.clear();
+        stats.runs = (stats.runs || 0) + 1;
+      }
     } catch (e) {
       error('open: ' + String(e.message).slice(0, 60));
     }
@@ -200,6 +216,7 @@ console.log(JSON.stringify({
   action_ms: { p50: pct(stats.action, 50), p95: pct(stats.action, 95) },
   cpu: before && after ? { seconds: +(after.cpu - before.cpu).toFixed(1), mean_percent: +((after.cpu - before.cpu) / wall * 100).toFixed(1), peak_percent: +peakCpu.toFixed(0) } : null,
   rss_mb: before ? { start: +before.rss.toFixed(0), peak: +peakRss.toFixed(0) } : null,
+  runs_done: stats.runs || 0,
   errors: stats.errors,
 }));
 process.exit(0);

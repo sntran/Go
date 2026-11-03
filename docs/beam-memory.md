@@ -1,9 +1,214 @@
 # The memory of the VM in WebAssembly grows far above erlang:memory()
 
-A report for [BEAM.com](https://github.com/sntran/BEAM.com), to file as an
-issue there.
+A report for [BEAM.com](https://github.com/sntran/BEAM.com). The first
+part is the report as I filed it (issue 141). BEAM.com #145 (merge
+8d700bd) fixed the main cause. The part "After BEAM.com #145" has the new
+measurements.
 
-## Summary
+## After BEAM.com #145
+
+### The build
+
+No release has 8d700bd yet: the newest release is v0.1.0-rc.6 (also on
+npm), and it is older than the fix. So I built beam.com from `main` as
+`docs/BUILDING.md` of BEAM.com tells (`make toolchain`, then
+`build/cosmocc/bin/make`), and made the npm package with
+`scripts/npm.sh` and `npm pack`:
+
+| | |
+|---|---|
+| BEAM.com commit | `6672c01c6d03524623c25003690c03c57af7fdf5` (`main`, 2 November 2026; it has the merge 8d700bd of #145) |
+| `beam.com --version` | 0.1.0-rc.6 (`main` did not change the version) |
+| SHA-256 of `build/beam.com` | `919706f042618ccb864b29238b77a332569af89753907b6977baa7929548557e` |
+| Runtime id (`runtime/runtime-id.js`) | `11f6eac7ed1a179741090e8029cfba01cb9e29f5699aace2fc4a0d98a79c5eda` |
+| `app.com` of Tower Go (`--target wasm32`) | 11.8 MiB |
+
+The `make` of the build ran its own step `test`, and it passed.
+
+### The small program again
+
+The program of the report (below), with the same steps. Renders of
+`kb=1000`, one at a time, then 5 renders of each bigger size. The VM
+memory comes from the log lines of the host:
+
+| Step | rc.6, default | `main`, default | rc.6, `-Mea min` | `main`, `-Mea min` |
+|---|---:|---:|---:|---:|
+| Start | 34 MB | 34 MB | 25 MB | 24 MB |
+| 50 renders | 55 MB | 53 MB | 25 MB | 24 MB |
+| 100 renders | 55 MB | 53 MB | 25 MB | 24 MB |
+| 200 renders | 81 MB | 53 MB | | 24 MB |
+| 300 renders | 94 MB | 53 MB | 25 MB | 24 MB |
+| `kb=2000` | 102 MB | 53 MB | 36 MB | 34 MB |
+| `kb=4000` | 115 MB | 80 MB | 36 MB | 44 MB |
+| `kb=6000` | 138 MB | 99 MB | 60 MB | 56 MB |
+
+`erlang:memory(total)` was 16 MB after each step. So the leak is fixed:
+with the default allocators, the VM no longer grows with each render of
+the same size. A bigger render still makes the VM grow (53 → 80 → 99
+MB), more than with `-Mea min` (34 → 44 → 56 MB).
+
+### Tower Go on `wrangler dev`
+
+`scripts/load/series.mjs` (see `docs/load-test.md`): for each step, a
+new `wrangler dev` (a new VM), N players who start at the same time for
+90 s, then 30 s with no players. Each 5 s, the tool reads
+`/stats/memory`: `wasm_host:memory/0` and, with the default flags,
+`erlang:memory(total)`. "After" is the last sample, 30 s after the
+players left. The isolate is the VM peak plus `app.com` (11.8 MB). The
+10-minute player starts a new run when a run ends (3 runs in 10
+minutes).
+
+Default flags (no `BEAM_ERL_FLAGS`; the host gives `-MBsbct 8192 -MHsbct
+8192`):
+
+| Players | VM start | VM peak | VM after | `erlang:memory(total)` start / peak / after | Isolate | Under 128 MB |
+|---:|---:|---:|---:|---|---:|---|
+| 1 | 56.6 MB | 82.8 MB | 82.8 MB | 30.4 / 38.8 / 31.7 MB | 95 MB | yes |
+| 3 | 55.3 MB | 105.8 MB | 105.8 MB | 30.4 / 50.2 / 31.8 MB | 118 MB | yes |
+| 5 | 55.3 MB | 128.8 MB | 128.8 MB | 30.4 / 61.4 / 31.9 MB | 141 MB | no |
+| 7 | 55.3 MB | 155.1 MB | 155.1 MB | 30.4 / 72.9 / 32.0 MB | 167 MB | no |
+| 10 | 55.3 MB | 165.3 MB | 165.3 MB | 30.4 / 89.2 / 32.1 MB | 177 MB | no |
+| 15 | 55.3 MB | 230.6 MB | 230.6 MB | 30.4 / 120.5 / 32.4 MB | 242 MB | no |
+| 20 | 55.3 MB | 264.3 MB | 264.3 MB | 30.4 / 151.4 / 32.7 MB | 276 MB | no |
+| 1, for 10 minutes | 55.3 MB | 91.3 MB | 91.3 MB | 30.4 / 39.8 / 32.0 MB | 103 MB | yes |
+
+`-Mea min`:
+
+| Players | VM start | VM peak | VM after | Isolate | Under 128 MB |
+|---:|---:|---:|---:|---:|---|
+| 1 | 39.9 MB | 54.4 MB | 54.4 MB | 66 MB | yes |
+| 3 | 39.9 MB | 73.4 MB | 73.4 MB | 85 MB | yes |
+| 5 | 39.9 MB | 86.2 MB | 86.2 MB | 98 MB | yes |
+| 7 | 39.9 MB | 108.4 MB | 108.4 MB | 120 MB | yes |
+| 10 | 39.9 MB | 134.1 MB | 134.1 MB | 146 MB | no |
+| 15 | 39.8 MB | 190.4 MB | 190.4 MB | 202 MB | no |
+| 20 | 39.9 MB | 219.9 MB | 219.9 MB | 232 MB | no |
+| 1, for 10 minutes | 39.8 MB | 65.1 MB | 65.1 MB | 77 MB | yes |
+
+With rc.6 (the report below), `-Mea min` gave 57, 90, 111, 163 and 275
+MB for 1, 3, 5, 10 and 20 players. So `main` also lowered `-Mea min`
+(for example 5 players: 111 → 86 MB).
+
+What the tables show:
+
+- The VM memory never shrinks, so "after" is the peak. Erlang gives its
+  memory back: `erlang:memory(total)` goes back to about 32 MB when the
+  players leave.
+- With the default flags, the VM grows 1.7 to 2.4 times as much as
+  `erlang:memory(total)`. For example, 20 players: Erlang grew by 121 MB,
+  and the VM by 209 MB.
+- Erlang itself grows about 6 MB for each player who joins at the same
+  time (20 players: 30 → 151 MB). This is the join of a run page: Tower
+  Go can make it smaller.
+- One player for 10 minutes: the VM grew in the first minute, and then
+  slowly (default: 82.8 MB at 50 s, 91.3 MB at 10 minutes; `-Mea min`:
+  53.6 MB at 50 s, 65.1 MB at 10 minutes).
+
+### Tower Go on Cloudflare
+
+The Worker `go-staging` (the same `app.com` and runtime). Caution: a
+deploy did **not** restart the Durable Object that was running (November
+2026): the VM kept its memory after a deploy, also with other variables
+or other code. `docs/WORKERS.md` says that a deploy resets the Durable
+Objects. The VM was new only after about 150 s with no requests. So
+before each step, the tool deploys, sends no request for 150 s, and
+checks that the VM is new (its memory is under 65 MB).
+
+A reset is a new VM: the memory of a VM never shrinks, so a sample under
+an earlier sample is a new VM. Then all WebSockets close (code 1006).
+
+Each step ran 90 s, from this container (in the US), with a new VM. For
+a reset, the peak is the last sample before the reset (the samples come
+each 5 s, so the real peak was higher). The times are the p95 of the
+runs with no reset, and include the network (about 100 ms):
+
+Default flags:
+
+| Players | Runs | VM start | VM peak | VM after | `erlang:memory(total)` start / peak / after | Tap → blue stone, p95 | Red's reply less 700 ms, p95 | Join, p95 |
+|---:|---|---:|---:|---:|---|---:|---:|---:|
+| 1 | pass | 56.6 MB | 71.6 MB | 71.6 MB | 26.9 / 33.9 / 28.2 MB | 146 ms | 152 ms | 1.4 s |
+| 3 | pass | 55.3 MB | 93.3 MB | 93.3 MB | 26.8 / 47.3 / 28.3 MB | 143 ms | 145 ms | 0.9 s |
+| 5 | pass | 55.3 MB | 114.1 MB | 114.1 MB | 26.8 / 58.1 / 28.4 MB | 146 ms | 174 ms | 1.4 s |
+| 7 | pass, pass | 55.3 MB | 132.6, 142.8 MB | the same | 26.8 / 71.3 / 28.5 MB | 147 to 152 ms | 165 to 187 ms | 1.3 to 1.5 s |
+| 10 | pass, **reset** | 55.3 MB | 167.1 MB; reset after 155.1 MB | 167.1 MB; a new VM | 26.8 / 88.7 / 28.6 MB | 141 ms | 244 ms | 1.3 s |
+| 15 | **reset**, **reset** | 55.3 MB | reset after 157.3 and 133.4 MB | a new VM | | | | |
+| 20 | **reset** | 55.3 MB | reset after 165.7 MB | a new VM | | | | |
+| 1, for 10 minutes | pass | 55.3 MB | 76.8 MB | 76.8 MB | 26.8 / 37.6 / 28.5 MB | 130 ms | 137 ms | 1.4 s |
+
+`-Mea min`:
+
+| Players | Runs | VM start | VM peak | VM after | Tap → blue stone, p95 | Red's reply less 700 ms, p95 | Join, p95 |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | pass | 36.6 MB | 47.6 MB | 47.6 MB | 144 ms | 151 ms | 1.1 s |
+| 3 | pass | 36.6 MB | 67.4 MB | 67.4 MB | 144 ms | 177 ms | 1.4 s |
+| 5 | pass | 37.1 MB | 80.4 MB | 80.4 MB | 148 ms | 181 ms | 1.4 s |
+| 7 | no reset, but 2 of 7 sockets closed (2 times) | 36.6 MB | 89.7, 90.4 MB | the same | | | 1.2 s |
+| 10 | pass, pass, pass | 36.6 MB | 122.7, 126.8, 123.5 MB | the same | 141 to 145 ms | 179 to 219 ms | 1.3 to 1.4 s |
+| 12 | pass (1 run) | 36.6 MB | 143.1 MB | 143.1 MB | 142 ms | 368 ms | 1.5 s |
+| 15 | **reset**, **reset** | 36.6 MB | reset after 166.6 and 167.0 MB | a new VM | | | |
+| 20 | **reset**, **reset** | 36.5 MB | reset after 159.8 and 159.6 MB | a new VM | | | |
+| 1, for 10 minutes | pass | 36.5 MB | 55.4 MB | 55.4 MB | 200 ms | 230 ms | 1.6 s |
+
+What the tables show:
+
+- On Cloudflare, the object reset when the VM went above about 135 to 170
+  MB, with both settings. This is more than 128 MB less `app.com`: the
+  check of `wrangler dev` (VM + `app.com` under 128 MB) is stricter than
+  Cloudflare was in these runs. 10 players with the default flags passed
+  one time at 167.1 MB.
+- With the default flags, the VM grows about 11 MB for each player who
+  starts at the same time; with `-Mea min`, about 9 MB. So the default
+  flags reach the reset with 10 players (1 of 2 runs), and `-Mea min`
+  only with 15 (12 passed in its one run).
+- In the two runs of 7 players with `-Mea min`, 2 sockets closed with
+  the code 1006 during the run, but the VM did not reset (its memory
+  stayed at 90 MB). The proxy of my computer had no failure. 10 players
+  with the same flag had no closed socket in 3 runs, and no other step
+  with no reset had one. I do not know the cause. A browser reconnects
+  and continues the run.
+- The earlier runs on Cloudflare (with rc.6, in `docs/load-test.md`) did
+  not always have a new VM, because a deploy did not restart the object.
+  Some of their resets came from the memory of earlier steps.
+
+### The decision: `-Mea min`
+
+`-Mea min` serves more players with no reset: on Cloudflare, 10 players
+who start at the same time passed in 3 of 3 runs with it (VM 123 to 127
+MB), and in 1 of 2 runs with the default flags (VM 155 to 167 MB). On
+`wrangler dev`, the largest N under 128 MB is 7 with `-Mea min` and 3
+with the default flags. With one player for 10 minutes, the VM is 55 MB
+with it and 77 MB without it (Cloudflare). The results are not near the
+same, so the app keeps `-Mea min` (`wrangler.jsonc`).
+
+The cost: `erlang:memory/0` does not work, so the telemetry poller stays
+off. The app reads the memory of the VM with `wasm_host:memory/0`
+(`Go.Capacity`, and `/stats/memory` for the load test).
+
+Caution: the production Worker `go` is still on rc.6. Workers Builds
+installs the npm package `beam.com` of `package.json` (0.1.0-rc.6), and
+`npx beam.com` downloads the `beam.com` of that release. These do not
+have the fix, and they do not have `wasm_host:memory/0`, so the guard of
+`Go.Capacity` is off there. When BEAM.com makes a release with 8d700bd,
+set that version in `package.json`. The results above come from the
+build of `main` on `go-staging`.
+
+### Open points for BEAM.com
+
+1. A deploy does not restart a Durable Object that is running. The VM
+   keeps its memory until Cloudflare evicts the object (after about 150
+   s with no requests). `docs/WORKERS.md` says that a deploy resets the
+   objects.
+2. With the default flags, the VM still grows 1.7 to 2.4 times as much
+   as `erlang:memory(total)`, and a bigger render still adds memory
+   (the small program: 53 → 99 MB). With `-Mea min`, about 30% less.
+3. On Cloudflare, the reset came at a VM of about 135 to 170 MB, not at
+   128 MB. Is the 128 MB counted in another way (for example, only the
+   pages of the memory of WebAssembly that are used)?
+
+
+## The report (before #145)
+
+### Summary
 
 On Cloudflare Workers (`workerd`, with `wrangler dev`), with the default
 allocators of ERTS, the memory of the VM grows each time that a process
@@ -15,14 +220,14 @@ terms, one at a time, take the VM from 34 MB to 94 MB, while
 from 61 MB to 76 MB (RSS) and then stays there. With `BEAM_ERL_FLAGS` =
 `-Mea min`, the VM in WebAssembly stays at 25 MB.
 
-## Versions
+### Versions
 
 - beam.com 0.1.0-rc.6 (the npm package and the native file of the
   release `v0.1.0-rc.6`).
 - Elixir 1.20.4, Erlang/OTP 29.1.1 (from beam.com).
 - wrangler 4.142.0 (workerd), Node.js 22.23.4, Linux x86_64.
 
-## The program
+### The program
 
 A Mix project with no dependencies. An HTTP server on `gen_tcp`; each
 request to `/render?kb=K` starts a process that builds `K * 8` rows of
@@ -164,7 +369,7 @@ export default {
 `package.json`: the dev dependencies `"beam.com": "0.1.0-rc.6"` and
 `"wrangler": "4.142.0"`.
 
-## Steps
+### Steps
 
 ```sh
 npm install
@@ -187,7 +392,7 @@ memory N MB` and `beam: memory N MB (a new peak of this VM)`, in steps of
 min"`. For the native run: `PORT=4002 ./app.com`, and the RSS of the
 process.
 
-## Results
+### Results
 
 Renders of `kb=1000`, one at a time:
 
@@ -214,7 +419,7 @@ allocators grows in steps of about 11 to 13 MB, and it does not stop
 growing. Renders at the same time (10 at a time, 5 times) took it from 34
 MB to 55 MB; with `-Mea min` it stayed at 25 MB.
 
-## The same in a real app
+### The same in a real app
 
 [Tower Go](https://github.com/sntran/Go) is a Phoenix LiveView app on a
 Durable Object. With the default allocators (the host flags `-MBsbct 8192
@@ -245,7 +450,7 @@ The app now uses `-Mea min`. With it, the VM still grows about 14 MB for
 each player who starts at the same time (5 players: 41 MB to 111 MB), and
 I cannot see inside it, because `erlang:memory/0` is not supported.
 
-## What I think happens (not checked in the C code)
+### What I think happens (not checked in the C code)
 
 - The carriers of ERTS come from `mmap()`, and in Emscripten `mmap()` is
   `malloc()` (`erl_mmap.h` in `wasm/erts/otp.patch`). A carrier that ERTS
@@ -258,7 +463,7 @@ I cannot see inside it, because `erlang:memory/0` is not supported.
 - With `-Mea min`, the blocks go to `malloc` directly, and `malloc` uses
   its free space again: the program stays flat.
 
-## Questions and ideas
+### Questions and ideas
 
 1. Can the host use `-Mea min` by default on Workers, or allocator
    settings that give the same result, while `erlang:memory/0` still
