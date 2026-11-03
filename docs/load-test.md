@@ -54,7 +54,7 @@ node scripts/load/series.mjs --players 1,3,5,7,10,15,20 --seconds 90 \
 # Cloudflare: a folder "staging" with the same files, and the name
 # go-staging in its wrangler.jsonc:
 node scripts/load/series.mjs --url https://go-staging.fifo.workers.dev \
-  --deploy "cd staging && npx wrangler deploy --var MEMORY_STATS:1 --var MEMORY_LIMIT_MB:off" \
+  --deploy "cd staging && npx wrangler deploy --var MEMORY_STATS:1 --var PLAYER_LIMIT:off" \
   --players 1,3,5,7,10,15,20 --seconds 90 --data /tmp/load-data.json --all
 ```
 
@@ -95,24 +95,86 @@ The app uses `-Mea min` (`wrangler.jsonc`). The reason is in
 
 ## The guard: "Too many players are here now"
 
-When the VM is above a limit, the server refuses a new player
-(`Go.Capacity`, `GoWeb.Capacity`): the page says "Too many players are
-here now. Try again in one minute.", with a button to try again (status
-503, `retry-after: 60`). A player who had an action in the last 10
-minutes is "here", and continues to play. The server checks the page
-request and the connect of the live view. The memory comes from
-`wasm_host:memory/0`.
+At most `PLAYER_LIMIT` pages are connected (`config/runtime.exs`, 8 by
+default in prod). A page is a WebSocket connection with a connected live
+view. A new player at the limit gets the page "Too many players are here
+now. Try again in one minute.", with a button to try again (status 503,
+`retry-after: 60`). A player who is already connected continues to play:
+a live navigation (the same connection) and a reload (a player with a
+connected page) always come in. The server checks the page request and
+the connect of the live view. One process (`Go.Capacity`) monitors the
+live views and does the check and the count in one step, so players who
+join at the same time cannot all pass. When a page closes, the count
+goes down at once.
 
-The limit is `MEMORY_LIMIT_MB` (`config/runtime.exs`): 100 MB by default
-in prod. On Cloudflare, the object reset above about 135 to 170 MB, and
-each player who starts at the same time adds about 9 MB. At 100 MB,
-about 7 to 8 players are in, and there is space for about 4 more who
-come in the same seconds. Players who come one after the other need
-less. Test: `test/go_web/capacity_test.exs` (with a limit of 1 MB).
+The first guard compared `wasm_host:memory/0` with a limit. This was
+wrong: the memory of the VM never shrinks, but the VM uses its free
+memory again. After one peak above the limit, it refused all new players
+until Cloudflare evicted the object, also when only one player played.
+Now the memory only goes to `/stats/memory` and to the log line of a
+refused player (`Too many players: refused N new page(s); 8 of 8 pages
+are connected; VM memory M MB`, at most one each 10 s).
 
-The production Worker `go` still has rc.6 (the npm package of
-`package.json`), which has no `wasm_host:memory/0`, so there the guard
-is off until a release of beam.com has the fix.
+Why 8: 10 players who start at the same time passed in 3 of 3 runs, and
+15 reset in 2 of 2. 8 leaves space for reloads and for the growth of the
+VM.
+
+Tests: `test/go_web/capacity_test.exs`, also the case of the first
+guard: at the limit a player is refused, the players leave, and a new
+player comes in.
+
+### On Cloudflare, with the guard on
+
+`go-staging` with `-Mea min` and the default `PLAYER_LIMIT` (8):
+
+- **20 players at the same time:** 8 came in, and 12 got the page "Too
+  many players". No reset, no closed socket. VM: 36.6 MB at the start,
+  111.4 MB at the peak. Tap → blue stone, p95: 181 ms.
+- **Rounds:** 8 players play for 90 s and leave, then 8 new players come,
+  on one VM (the samples each 5 s keep the object alive, so there is no
+  eviction between the rounds):
+
+| Round | Run A (5 rounds): VM peak | closed sockets | tap p95 | Run B (8 rounds): VM peak | refused | closed sockets | tap p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 97.6 MB | 0 | 892 ms | 106.9 MB | 0 | 0 | 149 ms |
+| 2 | 97.6 MB | 2 | 741 ms | 108.7 MB | 0 | 0 | 158 ms |
+| 3 | 115.4 MB | 0 | 363 ms | 108.7 MB | **2** | 2 | 533 ms |
+| 4 | 115.6 MB | 0 | 174 ms | 108.7 MB | 0 | 1 | 394 ms |
+| 5 | 115.6 MB | 0 | 174 ms | 118.1 MB | 0 | 0 | 410 ms |
+| 6 | | | | 118.4 MB | 0 | 0 | 403 ms |
+| 7 | | | | 118.4 MB | 0 | 0 | 396 ms |
+| 8 | | | | 118.4 MB | 0 | 0 | 384 ms |
+
+The VM started at 36.5 MB (A) and 37.1 MB (B). No reset. **The peak did
+not stop growing after the first round:** it grew one more step later
+(A: +17.8 MB in round 3; B: +9.4 MB in round 5), and then it stayed flat
+(A: 2 rounds; B: 3 rounds). The peak stays far under the resets (135 to
+170 MB). The test of the rounds stopped there.
+
+Two more findings of these rounds:
+
+- **Stale pages.** Sometimes the close of a WebSocket does not reach the
+  VM. In round 2 of B, only 6 of the 8 WebSocket requests of the Durable
+  Object ended when the players left (Workers Logs). The other 2 stayed
+  open, so their live views stayed in the VM and in the count of the
+  guard. In round 3, the count was 2 + 6 = 8, and 2 new players got "Too
+  many players" (the log line of the guard: `refused 1 new page(s); 8 of
+  8 pages are connected; VM memory 108.7 MB`). In A, the 2 stale
+  requests stayed open for 789 s, until Cloudflare evicted that object.
+  Phoenix closes a WebSocket with no data for 60 s, but these stayed. So
+  a stale page can take a place of the guard for many minutes.
+- **Slower taps.** In B, from round 3, the tap p95 was about 400 ms (115
+  to 160 ms before). In A, rounds 1 and 2 were slow, and rounds 4 and 5
+  were not. I do not know the cause.
+
+### The sockets that closed (code 1006)
+
+In some runs on Cloudflare, 2 sockets closed with the code 1006 with no
+reset. With Workers Logs on (`wrangler.jsonc`), the front Worker part of
+those 2 WebSocket requests ended with `responseStreamDisconnected`, and
+the Durable Object had no event for them. The VM and the app wrote no
+error. So the cause is on the path between the front Worker and the
+object, not in the app. Details: `docs/beam-memory.md`.
 
 ## The results with rc.6
 

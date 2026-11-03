@@ -20,7 +20,9 @@ const data = JSON.parse(readFileSync(args.data, 'utf8'));
 const pid = args.pid;
 const RED_DELAY = 700;
 
-const stats = { blue: [], red: [], action: [], join: [], errors: {}, taps: 0, wrong: 0 };
+const stats = { blue: [], red: [], action: [], join: [], errors: {}, taps: 0, wrong: 0, refused: 0 };
+// A player who got the page "Too many players are here now".
+class Refused extends Error {}
 const error = (what) => (stats.errors[what] = (stats.errors[what] || 0) + 1);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pause = () => sleep(3000 + Math.random() * 7000);
@@ -54,6 +56,8 @@ class Player {
     // data of this tool.
     const res = await fetch(`${url}/run/${this.run.code}`, { redirect: 'manual' });
     const html = await res.text();
+    // The guard of the server: "Too many players are here now".
+    if (res.status === 503 && html.includes('Too many players')) throw new Refused();
     const cookie = (res.headers.get('set-cookie') || '').split(';')[0];
     const csrf = /<meta[^>]*name="csrf-token" content="([^"]+)"/.exec(html)[1];
     const tag = (/<div[^>]*data-phx-main[^>]*>/.exec(html) || [])[0];
@@ -76,6 +80,14 @@ class Player {
       session: main[2],
       static: main[3],
     });
+    // At the limit, the join gives a redirect to the same page, and the page
+    // then says "Too many players".
+    const to = reply.response?.redirect?.to;
+    if (reply.status !== 'ok' && to) {
+      this.close();
+      const again = await fetch(new URL(to, url), { redirect: 'manual' });
+      if (again.status === 503 && (await again.text()).includes('Too many players')) throw new Refused();
+    }
     if (reply.status !== 'ok') throw new Error('join ' + JSON.stringify(reply.response).slice(0, 200));
     stats.join.push(Date.now() - t0);
   }
@@ -194,7 +206,8 @@ await Promise.all(
         stats.runs = (stats.runs || 0) + 1;
       }
     } catch (e) {
-      error('open: ' + String(e.message).slice(0, 60));
+      if (e instanceof Refused) stats.refused++;
+      else error('open: ' + String(e.message).slice(0, 60));
     }
   }).map((run) => Promise.race([run, sleep(seconds * 1000)]))
 );
@@ -217,6 +230,8 @@ console.log(JSON.stringify({
   cpu: before && after ? { seconds: +(after.cpu - before.cpu).toFixed(1), mean_percent: +((after.cpu - before.cpu) / wall * 100).toFixed(1), peak_percent: +peakCpu.toFixed(0) } : null,
   rss_mb: before ? { start: +before.rss.toFixed(0), peak: +peakRss.toFixed(0) } : null,
   runs_done: stats.runs || 0,
+  // The players who got the page "Too many players are here now".
+  refused: stats.refused,
   errors: stats.errors,
 }));
 process.exit(0);

@@ -182,15 +182,98 @@ same, so the app keeps `-Mea min` (`wrangler.jsonc`).
 
 The cost: `erlang:memory/0` does not work, so the telemetry poller stays
 off. The app reads the memory of the VM with `wasm_host:memory/0`
-(`Go.Capacity`, and `/stats/memory` for the load test).
+(`/stats/memory` for the load test, and the log line of a refused
+player).
 
 Caution: the production Worker `go` is still on rc.6. Workers Builds
 installs the npm package `beam.com` of `package.json` (0.1.0-rc.6), and
 `npx beam.com` downloads the `beam.com` of that release. These do not
-have the fix, and they do not have `wasm_host:memory/0`, so the guard of
-`Go.Capacity` is off there. When BEAM.com makes a release with 8d700bd,
-set that version in `package.json`. The results above come from the
+have the fix, and they do not have `wasm_host:memory/0`. The guard of
+`Go.Capacity` counts pages, so it also works there. When BEAM.com makes a
+release with 8d700bd, set that version in `package.json`. The results above come from the
 build of `main` on `go-staging`.
+
+### The guard: why not the memory
+
+The first guard of Tower Go refused new players when
+`wasm_host:memory/0` was above 100 MB. This is not a correct signal: the
+memory of WebAssembly never shrinks, but the VM uses its free memory
+again (the small program stays at 53 MB for 300 renders). After one
+peak above the limit, the guard refused all new players until Cloudflare
+evicted the object, also when only one player played. Now the guard
+counts the connected pages (at most 8, `PLAYER_LIMIT`), and the memory
+is only for the measurements and the log.
+
+Rounds on one VM (8 players play for 90 s and leave, then 8 new players
+come; no eviction between the rounds), `-Mea min`, on Cloudflare:
+
+| Round | Run A (5 rounds): VM peak | closed sockets | tap p95 | Run B (8 rounds): VM peak | refused | closed sockets | tap p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 97.6 MB | 0 | 892 ms | 106.9 MB | 0 | 0 | 149 ms |
+| 2 | 97.6 MB | 2 | 741 ms | 108.7 MB | 0 | 0 | 158 ms |
+| 3 | 115.4 MB | 0 | 363 ms | 108.7 MB | **2** | 2 | 533 ms |
+| 4 | 115.6 MB | 0 | 174 ms | 108.7 MB | 0 | 1 | 394 ms |
+| 5 | 115.6 MB | 0 | 174 ms | 118.1 MB | 0 | 0 | 410 ms |
+| 6 | | | | 118.4 MB | 0 | 0 | 403 ms |
+| 7 | | | | 118.4 MB | 0 | 0 | 396 ms |
+| 8 | | | | 118.4 MB | 0 | 0 | 384 ms |
+
+The VM started at 36.5 MB (A) and 37.1 MB (B). No reset. **The peak did
+not stop growing after the first round:** it grew one more step later
+(A: +17.8 MB in round 3; B: +9.4 MB in round 5), and then it stayed flat
+(A: 2 rounds; B: 3 rounds). The peak stays far under the resets (135 to
+170 MB). The test of the rounds stopped there.
+
+Two more findings of these rounds:
+
+- **Stale pages.** Sometimes the close of a WebSocket does not reach the
+  VM. In round 2 of B, only 6 of the 8 WebSocket requests of the Durable
+  Object ended when the players left (Workers Logs). The other 2 stayed
+  open, so their live views stayed in the VM and in the count of the
+  guard. In round 3, the count was 2 + 6 = 8, and 2 new players got "Too
+  many players" (the log line of the guard: `refused 1 new page(s); 8 of
+  8 pages are connected; VM memory 108.7 MB`). In A, the 2 stale
+  requests stayed open for 789 s, until Cloudflare evicted that object.
+  Phoenix closes a WebSocket with no data for 60 s, but these stayed. So
+  a stale page can take a place of the guard for many minutes.
+- **Slower taps.** In B, from round 3, the tap p95 was about 400 ms (115
+  to 160 ms before). In A, rounds 1 and 2 were slow, and rounds 4 and 5
+  were not. I do not know the cause.
+
+### The sockets that closed with the code 1006
+
+In some runs on Cloudflare, 2 sockets closed with the code 1006 and the
+VM did not reset (7 players with `-Mea min`, 2 runs; round 2 of the
+rounds above). With Workers Logs on (`"observability": { "enabled":
+true }` in `wrangler.jsonc`), round 2 of the rounds showed this:
+
+- The front Worker passes each WebSocket to the Durable Object. Its part
+  of the request ends about 0.1 s after the start. For 6 sockets, it
+  ended with the outcome `canceled`, as in all other runs. For 2 sockets,
+  it ended with `responseStreamDisconnected`.
+- The Durable Object has an event (outcome `canceled`, about 89 s) for
+  the 6 sockets, and **no event** for the 2 sockets.
+- The VM wrote no error, and the host wrote no line about them.
+- In round 5, one request of the front Worker also ended with
+  `responseStreamDisconnected`, but no socket closed, and the object had
+  8 events.
+- Two new runs of 7 players with `-Mea min` (with `wrangler tail` open)
+  had no `responseStreamDisconnected` and no closed socket.
+
+So the closes come on the path of the WebSocket between the front Worker
+and the Durable Object, not in the app. The logs do not say why the
+stream disconnected. A browser reconnects and continues the run.
+
+The 2 requests of the Durable Object for these sockets did end, but
+only at 19:45:58, after 789 s and with the outcome
+`responseStreamDisconnected`, when Cloudflare evicted that object. So
+for 13 minutes after the client lost the socket, the VM still had it
+open, with its live view. The same came without a 1006 close: in round 2
+of run B, 2 of 8 requests had no end when the players closed their
+sockets, and they took 2 places of the guard in round 3. Phoenix closes
+a WebSocket with no data for 60 s (`timeout` of the socket), so either
+data still came from the host, or the timeout does not work through the
+socket of the host (`wasm_tcp`).
 
 ### Open points for BEAM.com
 
@@ -204,6 +287,15 @@ build of `main` on `go-staging`.
 3. On Cloudflare, the reset came at a VM of about 135 to 170 MB, not at
    128 MB. Is the 128 MB counted in another way (for example, only the
    pages of the memory of WebAssembly that are used)?
+4. Sometimes the request of the front Worker for a WebSocket ends with
+   `responseStreamDisconnected`, the Durable Object has no event for
+   that socket, and the socket can close later with the code 1006 (see
+   above). Can the front Worker log the reason, or retry the connect to
+   the object?
+5. Then the VM keeps that socket open for many minutes (789 s in one
+   case), past the timeout of Phoenix (60 s with no data). Does the
+   socket of the host (`wasm_tcp`) give the VM the close of the client
+   and the timeout of a read?
 
 
 ## The report (before #145)

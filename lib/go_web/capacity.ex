@@ -1,15 +1,15 @@
 defmodule GoWeb.Capacity do
   @moduledoc """
-  Refuses a new player when the memory of the VM is above the limit (see
-  `Go.Capacity`). A player who is already here continues to play.
+  Refuses a new player when the number of connected pages is at the limit
+  (see `Go.Capacity`). A player who is already connected continues to
+  play.
 
   - As a plug (in the pipeline `:browser`): a GET of a page by a new player
     gets the page "Too many players are here now" (status 503), with a
     button to try again.
-  - As an `on_mount` hook of the live views: a new connection of a live
-    view by a new player goes to the same page. Each mount and each event
-    of a connected live view records an action of the player, so that the
-    player stays "here".
+  - As an `on_mount` hook of the live views: a connected live view joins
+    the count (`Go.Capacity.join/2`). A new connection at the limit loads
+    the page again, and then gets the same page.
   """
 
   @behaviour Plug
@@ -39,22 +39,12 @@ defmodule GoWeb.Capacity do
   def call(conn, _opts), do: conn
 
   def on_mount(:default, _params, session, socket) do
-    player = session["player_id"]
-
     cond do
       not connected?(socket) ->
         {:cont, socket}
 
-      Capacity.admit?(player) ->
-        Capacity.seen(player)
-
-        {:cont,
-         Phoenix.LiveView.attach_hook(socket, :capacity, :handle_event, fn _event,
-                                                                           _params,
-                                                                           socket ->
-           Capacity.seen(player)
-           {:cont, socket}
-         end)}
+      Capacity.join(session["player_id"], socket.transport_pid) == :ok ->
+        {:cont, socket}
 
       # The browser loads the page again, and the plug gives the page
       # "Too many players". The browser sends its path in "_here" (see

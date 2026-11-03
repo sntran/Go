@@ -209,11 +209,13 @@ BEAM.com (with the fix of #145) and `-Mea min`:
   same time with no reset (with the default flags of the VM: 7). The tap
   times include about 100 ms of network. Players who come one after the
   other need less.
-- Above 100 MB of VM memory (`MEMORY_LIMIT_MB`), a new player gets the
-  page "Too many players are here now. Try again in one minute." A player
-  who is already here continues to play (`Go.Capacity`).
+- At most 8 connected pages (`PLAYER_LIMIT`): a new player at the limit
+  gets the page "Too many players are here now. Try again in one
+  minute." A player who is already connected continues to play
+  (`Go.Capacity`). With 20 players at the same time on Cloudflare, 8
+  came in, 12 got this page, and the object did not reset.
 - The production Worker still runs beam.com 0.1.0-rc.6, because no
-  release has the fix yet. There, the guard is off.
+  release has the fix yet.
 - By the time of a tap, it serves about 150 players (an earlier test).
 - The memory of the VM never shrinks, and in WebAssembly it grows far
   above the memory that Erlang uses. `docs/beam-memory.md` is a report
@@ -640,11 +642,10 @@ each start. The SQLite of Workers takes only text and numbers, so
 I checked this with `wrangler dev`: a run in progress went on at the same
 puzzle after a restart of the Worker.
 
-Two variables of the Worker change the memory guard (`config/runtime.exs`):
-`MEMORY_LIMIT_MB` (100 by default, or `off`) and `MEMORY_STATS=1` (the
-route `/stats/memory` for the load test; off by default). The guard needs
-`wasm_host:memory/0`, which only beam.com after BEAM.com #145 has. When a
-release of beam.com has it, set its version in `package.json`.
+Two variables of the Worker change the guard (`config/runtime.exs`):
+`PLAYER_LIMIT` (the most connected pages: 8 by default, or `off`) and
+`MEMORY_STATS=1` (the route `/stats/memory` for the load test, with the
+memory of the VM and the count of pages; off by default).
 
 ### Deploy at each push (Workers Builds)
 

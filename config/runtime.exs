@@ -39,21 +39,30 @@ if config_env() == :dev do
     ]
 end
 
-# The guard of the memory of the VM (see Go.Capacity): above this limit
-# (MB), a new player gets the page "Too many players are here now". On
-# Cloudflare, the Durable Object reset when the VM went above about 135
-# to 170 MB, and each player who starts at the same time adds about 9 MB
-# (with -Mea min). At 100 MB, about 7 players are in, and there is space
-# for about 4 more who come in the same seconds (docs/load-test.md). Set
-# MEMORY_LIMIT_MB to change it, or to "off". The guard is on only in prod.
-memory_limit_mb =
-  case System.get_env("MEMORY_LIMIT_MB") do
-    nil -> if config_env() == :prod, do: 100
+# The guard of the number of players (see Go.Capacity): at most this many
+# connected pages (WebSocket connections with a live view). A new player
+# at the limit gets the page "Too many players are here now"; a player who
+# is connected continues to play.
+#
+# Why a count and not the memory: the memory of the VM in WebAssembly
+# never shrinks, but the VM uses its free memory again. After one peak
+# above a memory limit, a guard of the memory refuses all new players
+# until Cloudflare evicts the Durable Object, also when only one player
+# plays.
+#
+# Why 8: on Cloudflare (with -Mea min), 10 players who start at the same
+# time passed in 3 of 3 runs (VM 123 to 127 MB), and 15 reset in 2 of 2
+# (docs/load-test.md). 8 leaves space for players who reload, and for
+# the growth of the VM. Set PLAYER_LIMIT to change it, or to "off". The
+# guard is on only in prod.
+player_limit =
+  case System.get_env("PLAYER_LIMIT") do
+    nil -> if config_env() == :prod, do: 8
     "off" -> nil
-    mb -> String.to_integer(mb)
+    n -> String.to_integer(n)
   end
 
-config :go, :memory_limit_mb, memory_limit_mb
+config :go, :player_limit, player_limit
 
 # GET /stats/memory gives the memory of the VM (for the load test).
 config :go, :memory_stats, System.get_env("MEMORY_STATS") in ["1", "true"]

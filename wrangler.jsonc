@@ -16,6 +16,9 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Beam"] }],
   // A new deploy makes a new snapshot of the VM.
   "version_metadata": { "binding": "BEAM_VERSION" },
+  // Workers Logs: the logs of the Worker and of the Durable Object stay in
+  // the dashboard (Workers & Pages, go, Logs), also when no tail is open.
+  "observability": { "enabled": true },
   // -Mea min: the VM uses malloc for all its memory, not the allocators
   // of ERTS. In WebAssembly the memory of the VM never shrinks. Also after
   // the fix of BEAM.com #145, the VM grows about 30% less with this flag:

@@ -18,7 +18,11 @@
 //   OUT=/tmp/load-data.json mix run scripts/load/data.exs
 //   node scripts/load/series.mjs --players 1,3,5,7,10,15,20 --seconds 90 \
 //     --data /tmp/load-data.json [--flags default|"-Mea min"] [--limit 128] \
-//     [--app app.com] [--after 30] [--all] [--samples FILE]
+//     [--app app.com] [--after 30] [--rounds 1] [--guard] [--all] [--samples FILE]
+//
+// --guard: the guard of the players is on (PLAYER_LIMIT of the app, 8 in
+// prod). Without it, the tool sets PLAYER_LIMIT=off on wrangler dev.
+// --rounds R: R groups of N players, one after the other, on one VM.
 //
 // On Cloudflare: --url https://NAME.workers.dev --deploy "COMMAND". The
 // tool runs COMMAND before each step (a new deploy, so a new VM), and
@@ -43,6 +47,7 @@ const args = Object.fromEntries(
 const counts = (args.players || '1,3,5,10,20').split(',').map(Number);
 const seconds = Number(args.seconds || 90);
 const after = Number(args.after || 30);
+const rounds = Number(args.rounds || 1);
 const limit = Number(args.limit || 128);
 const app = args.app || 'app.com';
 const port = Number(args.port || 8787);
@@ -59,7 +64,8 @@ const MB = 1024 * 1024;
 async function startLocal() {
   rmSync('.wrangler/state', { recursive: true, force: true });
   const log = { text: '' };
-  const vars = [`BEAM_ERL_FLAGS:${flags}`, 'MEMORY_STATS:1', 'MEMORY_LIMIT_MB:off'];
+  // Without --guard, the guard of the players is off (PLAYER_LIMIT=off).
+  const vars = [`BEAM_ERL_FLAGS:${flags}`, 'MEMORY_STATS:1', ...(args.guard === 'true' ? [] : ['PLAYER_LIMIT:off'])];
   const proc = spawn('npx', ['wrangler', 'dev', '--port', String(port), ...vars.flatMap((v) => ['--var', v])], { detached: true });
   proc.stdout.on('data', (d) => (log.text += d));
   proc.stderr.on('data', (d) => (log.text += d));
@@ -160,45 +166,56 @@ for (const n of counts) {
   const t0 = Date.now();
   const samples = [await sample(t0, 'start')];
   let phase = 'play';
-  const timer = setInterval(async () => samples.push(await sample(t0, phase)), 5000);
-  const result = await load(n, workerd());
-  phase = 'after';
-  await sleep(after * 1000);
+  let round = 1;
+  const timer = setInterval(async () => samples.push({ round, ...(await sample(t0, phase)) }), 5000);
+  // --rounds R: R groups of N new players, one after the other, on the
+  // same VM (no new VM between them). The samples go on between rounds,
+  // so Cloudflare does not evict the object.
+  for (; round <= rounds; round++) {
+    phase = 'play';
+    const from = samples.length;
+    const result = await load(n, workerd());
+    phase = 'after';
+    await sleep(after * 1000);
+    samples.push({ round, ...(await sample(t0, 'after')) });
+    const fresh = samples.slice(from);
+    const last = samples[samples.length - 1];
+
+    const vm = samples.filter((s) => s.vm_mb != null).map((s) => s.vm_mb);
+    const erl = fresh.filter((s) => s.erlang_mb != null).map((s) => s.erlang_mb);
+    const fromLog = logPeak(log.text);
+    const peak = max([...vm, ...(fromLog == null ? [] : [fromLog])]);
+    const isolate = peak === null ? null : Math.round(peak + appMb);
+    // A reset gives a new VM. The memory of a VM never shrinks, so a
+    // sample under an earlier one is a new VM. A sample that fails (no
+    // answer in 4 s) is not a reset: the VM can be busy.
+    const reset = samples.some((s, i) => i > 0 && s.vm_mb != null && samples.slice(0, i).some((e) => e.vm_mb != null && s.vm_mb < e.vm_mb - 1));
+    const slowSamples = fresh.filter((s) => s.error).length;
+    const closed = Object.entries(result.errors || {}).filter(([k]) => k.startsWith('closed')).reduce((c, [, v]) => c + v, 0);
+    const pass = remote ? !reset && closed === 0 && !result.errors?.['no result'] : isolate !== null && isolate <= limit;
+    const crashed = (log.text.match(/\[error\]/g) || []).length;
+    console.log(JSON.stringify({
+      ...result,
+      round,
+      flags: flags || 'default',
+      vm_mb: { start: samples[0].vm_mb ?? null, round_peak: max(fresh.filter((s) => s.vm_mb != null).map((s) => s.vm_mb)), peak: max(vm), after: last.vm_mb ?? null, log_peak: fromLog },
+      erlang_mb: erl.length ? { peak: max(erl), after: last.erlang_mb } : null,
+      app_mb: +appMb.toFixed(1),
+      isolate_mb: isolate,
+      limit_mb: limit,
+      reset,
+      slow_samples: slowSamples,
+      closed_sockets: closed,
+      pass,
+      server_errors: crashed,
+    }));
+    if (pass) best = n;
+    else failed = true;
+  }
   clearInterval(timer);
-  samples.push(await sample(t0, 'after'));
   stop(proc);
   if (args.samples) for (const s of samples) appendFileSync(args.samples, JSON.stringify({ players: n, flags: flags || 'default', ...s }) + '\n');
-
-  const vm = samples.filter((s) => s.vm_mb != null).map((s) => s.vm_mb);
-  const erl = samples.filter((s) => s.erlang_mb != null).map((s) => s.erlang_mb);
-  const fromLog = logPeak(log.text);
-  const peak = max([...vm, ...(fromLog == null ? [] : [fromLog])]);
-  const last = samples[samples.length - 1];
-  const isolate = peak === null ? null : Math.round(peak + appMb);
-  // A reset gives a new VM. The memory of a VM never shrinks, so a sample
-  // under an earlier one is a new VM. A sample that fails is also a reset.
-  const reset = samples.some((s, i) => s.error || (i > 0 && s.vm_mb != null && samples.slice(0, i).some((e) => e.vm_mb != null && s.vm_mb < e.vm_mb - 1)));
-  const closed = Object.entries(result.errors || {}).filter(([k]) => k.startsWith('closed')).reduce((n, [, v]) => n + v, 0);
-  const pass = remote ? !reset && closed === 0 && !result.errors?.['no result'] : isolate !== null && isolate <= limit;
-  const crashed = (log.text.match(/\[error\]/g) || []).length;
-  console.log(JSON.stringify({
-    ...result,
-    flags: flags || 'default',
-    vm_mb: { start: samples[0].vm_mb ?? null, peak: max(vm), after: last.vm_mb ?? null, log_peak: fromLog },
-    erlang_mb: erl.length ? { start: samples[0].erlang_mb, peak: max(erl), after: last.erlang_mb } : null,
-    app_mb: +appMb.toFixed(1),
-    isolate_mb: isolate,
-    limit_mb: limit,
-    reset,
-    closed_sockets: closed,
-    pass,
-    server_errors: crashed,
-  }));
-  if (pass) best = n;
-  else {
-    failed = true;
-    if (args.all !== 'true') break;
-  }
+  if (failed && args.all !== 'true') break;
   await sleep(2000);
 }
 

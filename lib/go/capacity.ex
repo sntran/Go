@@ -1,49 +1,71 @@
 defmodule Go.Capacity do
   @moduledoc """
-  The guard of the memory of the VM.
+  The guard of the number of players.
 
-  On Cloudflare, an isolate has 128 MB for the VM and for `app.com`. The
-  memory of the VM in WebAssembly never shrinks, and when the isolate goes
-  over its limit, the Durable Object resets and all players lose their
-  connection. So when the VM is above a limit, the server refuses new
-  players: their page says "Too many players are here now", with a button
-  to try again (see `GoWeb.Capacity`).
+  All players share one VM in one Durable Object. Each player who starts
+  at the same time takes memory, and when the isolate goes over its
+  limit, the object resets and all players lose their connection (see
+  `docs/load-test.md`). So the server lets in at most `limit/0` connected
+  pages. A new player at the limit gets the page "Too many players are
+  here now", with a button to try again (see `GoWeb.Capacity`).
 
-  A player who is already here continues to play. The server keeps the
-  time of the last action of each player (a mount or an event of a live
-  view). A player with an action in the last `@grace` ms is "here".
+  The count is the number of connected pages: the WebSocket connections
+  (transports) that have a connected live view. This process monitors
+  each live view, so the count goes down when a page closes. A player who
+  is already connected continues to play: a new live view on the same
+  connection (a live navigation), or a new page of a player who has a
+  connected live view (a reload), always comes in.
 
-  The memory comes from `wasm_host:memory/0` of beam.com (the size of the
-  memory of WebAssembly, also with `-Mea min`). Natively, and in an older
-  beam.com, it is `erlang:memory(:total)`. When no value is available,
-  the guard is off.
+  This process does the check and the count in one step, so players who
+  join at the same time cannot all pass the check.
 
-  The limit is `config :go, :memory_limit_mb` (see `config/runtime.exs`,
-  `MEMORY_LIMIT_MB`). `nil` turns the guard off.
+  The memory of the VM (`memory/0`) does not decide: in WebAssembly it
+  never shrinks, but the VM uses its free memory again. `/stats/memory`
+  and the log give it.
+
+  The limit is `config :go, :player_limit` (see `config/runtime.exs`,
+  `PLAYER_LIMIT`). `nil` turns the guard off.
   """
 
   use GenServer
 
-  @table __MODULE__
-  # A player with an action in this time (ms) is still here.
-  @grace 10 * 60_000
+  require Logger
+
+  # At most one log line of refused players in this time (ms).
+  @log_every 10_000
 
   def start_link(_), do: GenServer.start_link(__MODULE__, nil, name: __MODULE__)
 
-  @impl true
-  def init(nil) do
-    :ets.new(@table, [:named_table, :public, :set, write_concurrency: true])
-    # Remove the players who left, one time in each grace time.
-    :timer.send_interval(@grace, :sweep)
-    {:ok, nil}
+  @doc "The most connected pages, or nil when the guard is off."
+  @spec limit() :: pos_integer() | nil
+  def limit do
+    case Application.get_env(:go, :player_limit) do
+      n when is_integer(n) and n > 0 -> n
+      _ -> nil
+    end
   end
 
-  @impl true
-  def handle_info(:sweep, state) do
-    old = now() - @grace
-    :ets.select_delete(@table, [{{:_, :"$1"}, [{:<, :"$1", old}], [true]}])
-    {:noreply, state}
-  end
+  @doc """
+  The live view that calls this joins, on its connection `transport`, for
+  `player`. Gives `:ok` (the count now has it, until the live view ends),
+  or `:full`.
+  """
+  @spec join(String.t() | nil, pid()) :: :ok | :full
+  def join(player, transport), do: GenServer.call(__MODULE__, {:join, self(), player, transport})
+
+  @doc """
+  True when a page of the player can come in: under the limit, or the
+  player has a connected live view.
+  """
+  @spec admit?(String.t() | nil) :: boolean()
+  def admit?(player), do: GenServer.call(__MODULE__, {:admit?, player})
+
+  @doc "The number of connected pages."
+  @spec count() :: non_neg_integer()
+  def count, do: GenServer.call(__MODULE__, :count)
+
+  @doc "Forgets all live views (for the tests)."
+  def reset, do: GenServer.call(__MODULE__, :reset)
 
   @doc "The memory of the VM in bytes, or nil when it is not available."
   @spec memory() :: non_neg_integer() | nil
@@ -59,55 +81,68 @@ defmodule Go.Capacity do
     _ -> nil
   end
 
-  @doc "The limit in bytes, or nil when the guard is off."
-  @spec limit() :: non_neg_integer() | nil
-  def limit do
-    case Application.get_env(:go, :memory_limit_mb) do
-      mb when is_number(mb) and mb > 0 -> round(mb * 1024 * 1024)
-      _ -> nil
-    end
-  end
+  # The state: the live views (pid => {player, transport, monitor}), and
+  # the refused players that are not in the log yet.
+  @impl true
+  def init(nil), do: {:ok, %{views: %{}, refused: 0, logged: nil}}
 
-  @doc "True when the memory of the VM is above the limit."
-  @spec full?() :: boolean()
-  def full? do
-    with limit when limit != nil <- limit(),
-         memory when memory != nil <- memory() do
-      memory > limit
+  @impl true
+  def handle_call({:join, pid, player, transport}, _from, state) do
+    if Map.has_key?(state.views, pid) or room?(state, player, transport) do
+      views =
+        Map.put_new_lazy(state.views, pid, fn -> {player, transport, Process.monitor(pid)} end)
+
+      {:reply, :ok, %{state | views: views}}
     else
-      _ -> false
+      {:reply, :full, refused(state)}
     end
   end
 
-  @doc """
-  True when the player can come in: the VM is under the limit, or the
-  player is already here.
-  """
-  @spec admit?(String.t() | nil) :: boolean()
-  def admit?(player), do: here?(player) or not full?()
-
-  @doc "Records an action of the player."
-  @spec seen(String.t() | nil) :: :ok
-  def seen(nil), do: :ok
-
-  def seen(player) do
-    :ets.insert(@table, {player, now()})
-    :ok
+  def handle_call({:admit?, player}, _from, state) do
+    if room?(state, player, nil), do: {:reply, true, state}, else: {:reply, false, refused(state)}
   end
 
-  @doc "True when the player had an action in the last grace time."
-  @spec here?(String.t() | nil) :: boolean()
-  def here?(nil), do: false
+  def handle_call(:count, _from, state), do: {:reply, transports(state), state}
 
-  def here?(player) do
-    case :ets.lookup(@table, player) do
-      [{^player, time}] -> now() - time < @grace
-      [] -> false
+  def handle_call(:reset, _from, state) do
+    for {_, {_, _, ref}} <- state.views, do: Process.demonitor(ref, [:flush])
+    {:reply, :ok, %{state | views: %{}, refused: 0}}
+  end
+
+  @impl true
+  def handle_info({:DOWN, _ref, :process, pid, _}, state) do
+    {:noreply, %{state | views: Map.delete(state.views, pid)}}
+  end
+
+  defp room?(state, player, transport) do
+    limit = limit()
+
+    limit == nil or
+      Enum.any?(state.views, fn {_, {p, t, _}} ->
+        t == transport or (player != nil and p == player)
+      end) or
+      transports(state) < limit
+  end
+
+  defp transports(state),
+    do: state.views |> Enum.map(fn {_, {_, t, _}} -> t end) |> Enum.uniq() |> length()
+
+  # Counts a refused player, and writes the log at most one time in
+  # @log_every ms, with the memory of the VM.
+  defp refused(state) do
+    now = System.monotonic_time(:millisecond)
+    state = %{state | refused: state.refused + 1}
+
+    if state.logged == nil or now - state.logged >= @log_every do
+      mb = if m = memory(), do: Float.round(m / 1_048_576, 1)
+
+      Logger.warning(
+        "Too many players: refused #{state.refused} new page(s); #{transports(state)} of #{limit()} pages are connected; VM memory #{mb} MB"
+      )
+
+      %{state | refused: 0, logged: now}
+    else
+      state
     end
   end
-
-  @doc "Forgets all players (for the tests)."
-  def reset, do: :ets.delete_all_objects(@table)
-
-  defp now, do: System.monotonic_time(:millisecond)
 end

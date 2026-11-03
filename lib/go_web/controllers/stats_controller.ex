@@ -2,7 +2,8 @@ defmodule GoWeb.StatsController do
   @moduledoc """
   The memory of the VM, for the load test (`scripts/load/series.mjs`):
   `wasm_host:memory/0` (in WebAssembly), `erlang:memory(:total)` (when the
-  allocators of ERTS are on), and the limit of `Go.Capacity`. In bytes.
+  allocators of ERTS are on), in bytes, and the connected pages and their
+  limit (`Go.Capacity`).
 
   Only with `MEMORY_STATS=1` (see `config/runtime.exs`). Else 404.
   """
@@ -14,8 +15,8 @@ defmodule GoWeb.StatsController do
       json(conn, %{
         vm: wasm_memory(),
         erlang_total: erlang_total(),
-        limit: Go.Capacity.limit(),
-        full: Go.Capacity.full?()
+        pages: Go.Capacity.count(),
+        player_limit: Go.Capacity.limit()
       })
     else
       send_resp(conn, 404, "")
